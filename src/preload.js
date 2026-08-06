@@ -1,8 +1,13 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("catalog", {
   getSettings: () => ipcRenderer.invoke("settings:get"),
   pickRepoFolder: () => ipcRenderer.invoke("settings:pickRepoFolder"),
+
+  // Electron removed File.path from renderer-side File objects (Electron 32+);
+  // webUtils.getPathForFile is the replacement, but it's only callable from
+  // the preload/main context, not the sandboxed renderer directly.
+  getPathForFile: (file) => webUtils.getPathForFile(file),
 
   scan: () => ipcRenderer.invoke("catalog:scan"),
   fixedSlots: () => ipcRenderer.invoke("catalog:fixedSlots"),

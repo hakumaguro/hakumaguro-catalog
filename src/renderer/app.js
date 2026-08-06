@@ -789,7 +789,12 @@ async function pickSourceViaDrop(dataTransfer) {
     alert(`Can't use "${file.name}" — drop a PNG, JPG, or WEBP image.`);
     return;
   }
-  const picked = await window.catalog.imageInfo(file.path);
+  const sourcePath = window.catalog.getPathForFile(file);
+  if (!sourcePath) {
+    alert(`Couldn't read a file path for "${file.name}". Try again, or use "click to browse" instead.`);
+    return;
+  }
+  const picked = await window.catalog.imageInfo(sourcePath);
   applyPickedSource(picked);
 }
 
