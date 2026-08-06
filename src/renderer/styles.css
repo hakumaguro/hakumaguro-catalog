@@ -130,6 +130,18 @@ body {
 }
 .crop-stage.empty { cursor: default; }
 .crop-stage:active { cursor: grabbing; }
+.crop-stage.drag-over { box-shadow: inset 0 0 0 3px #5fb58f; background-color: #eef7f1; }
+
+.stage-dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  width: 320px; max-width: 80%; padding: 40px 24px; margin: 0 auto;
+  border: 2px dashed #cfd9d3; border-radius: 16px; background: rgba(255,255,255,.5);
+  cursor: pointer; transition: background .12s, border-color .12s;
+}
+.stage-dropzone:hover { background: rgba(255,255,255,.85); border-color: #5fb58f; }
+.stage-dropzone-icon { font-size: 26px; color: #5fb58f; line-height: 1; }
+.stage-dropzone-title { font-size: 14px; font-weight: 700; color: #4a4550; }
+.stage-dropzone-hint { font-size: 11.5px; color: #9a93a3; }
 .crop-image { position: absolute; left: 50%; top: 50%; will-change: transform; }
 .crop-frame { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 0 2000px rgba(52,47,58,.58); border: 2px solid rgba(255,255,255,.95); border-radius: 2px; pointer-events: none; }
 .crop-frame .grid-v, .crop-frame .grid-h { position: absolute; background: rgba(255,255,255,.35); }
@@ -140,12 +152,12 @@ body {
 .overlay-source { left: 18px; top: 18px; }
 .overlay-output { right: 18px; bottom: 18px; text-align: right; display: block; }
 .overlay-zoom { left: 18px; bottom: 18px; }
-.overlay-empty-hint { color: #9a93a3; font-size: 13px; }
 
 .side-panel { width: 326px; flex: none; border-left: 1px solid #eee9e1; background: #fbf9f4; display: flex; flex-direction: column; min-height: 0; }
 .side-panel-scroll { flex: 1; overflow: auto; padding: 18px 20px; }
-.dropzone { border: 1.5px dashed #cfd9d3; background: #f2f8f4; border-radius: 10px; padding: 14px; text-align: center; margin-bottom: 18px; cursor: pointer; }
+.dropzone { border: 1.5px dashed #cfd9d3; background: #f2f8f4; border-radius: 10px; padding: 14px; text-align: center; margin-bottom: 18px; cursor: pointer; transition: background .12s, border-color .12s; }
 .dropzone:hover { background: #ecf6f0; }
+.dropzone.drag-over { background: #e3efe8; border-color: #5fb58f; }
 .dropzone-title { font-size: 12.5px; color: #2e8a67; font-weight: 700; }
 .dropzone-hint { font-family: Consolas, ui-monospace, monospace; font-size: 10.5px; color: #7a7385; margin-top: 4px; }
 

@@ -489,7 +489,13 @@ function renderEditor() {
       </div>
     `;
   } else {
-    stageInner = `<div class="overlay-empty-hint">Pick a source image to start cropping →</div>`;
+    stageInner = `
+      <div class="stage-dropzone" id="stage-dropzone">
+        <div class="stage-dropzone-icon">⇩</div>
+        <div class="stage-dropzone-title">Drag & drop an image here</div>
+        <div class="stage-dropzone-hint">or click to browse · PNG, JPG, WEBP</div>
+      </div>
+    `;
   }
 
   const sidePanel = renderEditorSidePanel(e);
@@ -521,7 +527,7 @@ function renderEditorSidePanel(e) {
   let html = `
     <div class="dropzone" id="pick-source">
       <div class="dropzone-title">${e.sourcePath ? "Source loaded" : "Pick source image"}</div>
-      <div class="dropzone-hint">${e.sourcePath ? "click to replace" : "opens a file picker"}</div>
+      <div class="dropzone-hint">${e.sourcePath ? "click or drag a new file to replace" : "click or drag & drop a file"}</div>
     </div>
     <div class="label" style="margin-bottom:9px;">Slot</div>
     <div class="info-card">
@@ -756,23 +762,63 @@ function bindLibraryEvents() {
 
 let dragState = null;
 
+const DROPPABLE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
+
+function applyPickedSource(picked) {
+  const e = state.editor;
+  if (!picked) return;
+  e.sourcePath = picked.sourcePath;
+  e.sourceW = picked.width;
+  e.sourceH = picked.height;
+  e.sourceBytes = picked.bytes;
+  e.pan = { x: 0, y: 0 };
+  e.zoom = 100;
+  render();
+}
+
+async function pickSourceViaDialog() {
+  const picked = await window.catalog.pickImage();
+  applyPickedSource(picked);
+}
+
+async function pickSourceViaDrop(dataTransfer) {
+  const file = dataTransfer.files && dataTransfer.files[0];
+  if (!file) return;
+  const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+  if (!DROPPABLE_EXTENSIONS.includes(ext)) {
+    alert(`Can't use "${file.name}" — drop a PNG, JPG, or WEBP image.`);
+    return;
+  }
+  const picked = await window.catalog.imageInfo(file.path);
+  applyPickedSource(picked);
+}
+
+function bindDropTarget(el) {
+  if (!el) return;
+  el.addEventListener("dragover", (ev) => {
+    ev.preventDefault();
+    el.classList.add("drag-over");
+  });
+  el.addEventListener("dragleave", () => el.classList.remove("drag-over"));
+  el.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    el.classList.remove("drag-over");
+    pickSourceViaDrop(ev.dataTransfer);
+  });
+}
+
 function bindEditorEvents() {
   const e = state.editor;
 
   const pickSourceEl = dom.app.querySelector("#pick-source");
-  if (pickSourceEl) pickSourceEl.onclick = async () => {
-    const picked = await window.catalog.pickImage();
-    if (!picked) return;
-    e.sourcePath = picked.sourcePath;
-    e.sourceW = picked.width;
-    e.sourceH = picked.height;
-    e.sourceBytes = picked.bytes;
-    e.pan = { x: 0, y: 0 };
-    e.zoom = 100;
-    render();
-  };
+  if (pickSourceEl) pickSourceEl.onclick = pickSourceViaDialog;
+  bindDropTarget(pickSourceEl);
+
+  const stageDropzoneEl = dom.app.querySelector("#stage-dropzone");
+  if (stageDropzoneEl) stageDropzoneEl.onclick = pickSourceViaDialog;
 
   const stage = dom.app.querySelector("#crop-stage");
+  bindDropTarget(stage);
   if (stage && e.sourcePath) {
     stage.addEventListener("mousedown", (ev) => {
       dragState = { startX: ev.clientX, startY: ev.clientY, ox: e.pan.x, oy: e.pan.y };

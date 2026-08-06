@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("catalog", {
     ipcRenderer.invoke("catalog:centeredCropRect", { sourceWidth, sourceHeight, target }),
 
   pickImage: () => ipcRenderer.invoke("dialog:pickImage"),
+  imageInfo: (sourcePath) => ipcRenderer.invoke("dialog:imageInfo", { sourcePath }),
 
   queueList: () => ipcRenderer.invoke("queue:list"),
   queueAdd: (payload) => ipcRenderer.invoke("queue:add", payload),

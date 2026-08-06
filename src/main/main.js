@@ -79,16 +79,31 @@ ipcMain.handle("catalog:nextId", (_e, { arrayKey }) => {
 
 // ---- source picking + crop math ----
 
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+
+async function readImageInfo(sourcePath) {
+  const meta = await sharp(sourcePath).metadata();
+  const bytes = fs.statSync(sourcePath).size;
+  return { sourcePath, width: meta.width, height: meta.height, bytes };
+}
+
 ipcMain.handle("dialog:pickImage", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openFile"],
     filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
-  const sourcePath = result.filePaths[0];
-  const meta = await sharp(sourcePath).metadata();
-  const bytes = fs.statSync(sourcePath).size;
-  return { sourcePath, width: meta.width, height: meta.height, bytes };
+  return readImageInfo(result.filePaths[0]);
+});
+
+// Companion to dialog:pickImage for drag-and-dropped files, where the
+// renderer already has an absolute path (via the dropped File's .path) and
+// just needs the same metadata a picker selection would have produced.
+ipcMain.handle("dialog:imageInfo", async (_e, { sourcePath }) => {
+  if (!IMAGE_EXTENSIONS.has(path.extname(sourcePath).toLowerCase())) {
+    throw new Error(`Unsupported file type: ${path.extname(sourcePath)}`);
+  }
+  return readImageInfo(sourcePath);
 });
 
 ipcMain.handle("catalog:targetFor", (_e, { kind, span, lifeHeight }) => {
