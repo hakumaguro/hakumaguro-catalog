@@ -1,1 +1,22 @@
 node_modules/
+
+# build output / packaging (none shipped yet, but keep it out if it appears)
+dist/
+out/
+build/
+
+# local settings / secrets — app settings actually persist to Electron's
+# userData dir outside this repo, but keep these out defensively
+settings.json
+.env
+.env.*
+
+# logs
+npm-debug.log*
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
