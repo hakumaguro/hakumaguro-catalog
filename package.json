@@ -1,0 +1,20 @@
+{
+  "name": "hakumaguro-catalog",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop image-catalog tool for hakumaguro.dev — pick, crop, convert, and bind images into the site's content files.",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "node scripts/smoke.js"
+  },
+  "dependencies": {
+    "diff": "^5.2.0",
+    "sharp": "^0.33.5",
+    "ts-morph": "^24.0.0",
+    "typescript": "^5.6.3"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
