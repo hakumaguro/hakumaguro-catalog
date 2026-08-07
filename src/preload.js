@@ -29,4 +29,10 @@ contextBridge.exposeInMainWorld("catalog", {
   queueDiscardAll: () => ipcRenderer.invoke("queue:discardAll"),
   queueDiff: () => ipcRenderer.invoke("queue:diff"),
   queueApply: () => ipcRenderer.invoke("queue:apply"),
+
+  previewRender: () => ipcRenderer.invoke("preview:render"),
+  previewState: () => ipcRenderer.invoke("preview:state"),
+  previewStop: () => ipcRenderer.invoke("preview:stop"),
+  previewClearCache: () => ipcRenderer.invoke("preview:clearCache"),
+  previewCacheSize: () => ipcRenderer.invoke("preview:cacheSize"),
 });

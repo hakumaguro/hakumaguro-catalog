@@ -47,7 +47,33 @@ const state = {
   busy: false,
   thumbCache: {}, // absolute path -> data URL, see preloadThumbs()
   setupRejected: null, // settings payload of a folder the picker just refused
+
+  // Live preview (review screen). `signature` is the queue state the current
+  // preview was built from — the debounced refresh compares against it so
+  // re-rendering the screen for unrelated reasons doesn't rebuild the shadow.
+  preview: {
+    tab: "preview", // "preview" | "code"
+    status: "idle", // idle | starting | running | failed
+    url: null,
+    error: null,
+    log: [],
+    logOpen: false,
+    targets: [],
+    index: 0,
+    canFocus: true,
+    highlight: true,
+    width: 1440,
+    signature: null,
+  },
 };
+
+const PREVIEW_WIDTHS = [
+  { label: "Desktop", w: 1440 },
+  { label: "Tablet", w: 834 },
+  { label: "Mobile", w: 390 },
+];
+
+let previewDebounce = null;
 
 const dom = { app: document.getElementById("app") };
 
@@ -137,6 +163,10 @@ async function adoptRepo(settings) {
   state.settings = settings;
   state.setupRejected = null;
   invalidateThumbCache();
+  // The running dev server is serving the *previous* repo's shadow — every
+  // pixel of it would now be a lie about the repo we just switched to.
+  await window.catalog.previewStop().catch(() => null);
+  Object.assign(state.preview, { status: "idle", url: null, targets: [], index: 0, signature: null, error: null, log: [] });
   await loadRepoData();
   if (state.screen === "setup") state.screen = "library";
   render();
@@ -672,6 +702,9 @@ function renderReview(d) {
     ? "Queue is empty — see the apply result above."
     : "Nothing queued. Go to Library and open a slot.";
 
+  const p = state.preview;
+  const onPreview = p.tab === "preview";
+
   return `
     <div style="flex:1;display:flex;flex-direction:column;min-height:0;">
       <div class="screen-header" style="border-bottom:none;">
@@ -683,12 +716,25 @@ function renderReview(d) {
           </div>
         </div>
       </div>
-      <div class="review-scroll" id="diff-scroll">
+
+      <div class="review-tabbar">
+        <button class="review-tab ${onPreview ? "is-active" : ""}" data-tab="preview">Preview</button>
+        <button class="review-tab ${onPreview ? "" : "is-active"}" data-tab="code">Code</button>
+        <div style="flex:1;"></div>
+        ${onPreview ? renderPreviewToolbar() : ""}
+      </div>
+
+      <div class="pane-preview" id="pane-preview" ${onPreview ? "" : 'style="display:none;"'}>
+        ${renderPreviewPane()}
+      </div>
+
+      <div class="review-scroll" id="diff-scroll" ${onPreview ? 'style="display:none;"' : ""}>
         ${state.applyResult ? renderApplyResult(state.applyResult) : ""}
         <div class="label" style="margin-bottom:10px;">Files</div>
         ${items.length ? `<div style="margin-bottom:26px;">${rows}</div>` : `<div class="empty-state">${esc(emptyStateText)}</div>`}
         <div id="diff-target"></div>
       </div>
+
       <div class="review-footer">
         <div style="flex:1;">
           <div class="review-footer-note">Last checkpoint before disk.</div>
@@ -699,6 +745,158 @@ function renderReview(d) {
       </div>
     </div>
   `;
+}
+
+// ---- live preview ----
+
+function renderPreviewToolbar() {
+  const p = state.preview;
+  const running = p.status === "running";
+  const total = p.targets.length;
+  const canNav = running && p.canFocus && total > 0;
+
+  const widths = PREVIEW_WIDTHS.map(
+    (x) => `<button class="pv-chip ${p.width === x.w ? "is-active" : ""}" data-width="${x.w}">${x.label}</button>`,
+  ).join("");
+
+  return `
+    <div class="pv-toolbar">
+      ${widths}
+      <span class="pv-width mono" id="pv-width-readout">${p.width}px</span>
+      <span class="pv-sep"></span>
+      <button class="pv-chip" id="pv-prev" ${canNav ? "" : "disabled"}>‹</button>
+      <span class="pv-counter mono" id="pv-counter">${total ? `${Math.min(p.index + 1, total)}/${total}` : "—"}</span>
+      <button class="pv-chip" id="pv-next" ${canNav ? "" : "disabled"}>›</button>
+      <span class="pv-sep"></span>
+      <label class="pv-toggle"><input type="checkbox" id="pv-highlight" ${p.highlight ? "checked" : ""}> Highlight</label>
+      <button class="pv-chip" id="pv-refresh" ${p.status === "starting" ? "disabled" : ""}>Refresh</button>
+    </div>`;
+}
+
+function renderPreviewPane() {
+  const p = state.preview;
+
+  if (!state.queueList.length && !state.applyResult) {
+    return `<div class="pv-empty">Nothing queued — the preview shows the site as it would look after your pending changes.</div>`;
+  }
+
+  if (p.status === "failed") {
+    return `
+      <div class="pv-fail">
+        <div class="pv-fail-title">Preview unavailable</div>
+        <div class="pv-fail-sub">${esc(p.error || "The dev server could not be started.")}</div>
+        <div class="pv-fail-sub" style="margin-top:6px;">Apply is still available — the preview is a look, not a gate. The real check is the repo's own <span class="mono">tsc --noEmit</span>, which Apply always runs.</div>
+        ${renderPreviewLog()}
+      </div>`;
+  }
+
+  if (p.status !== "running" || !p.url) {
+    return `
+      <div class="pv-booting">
+        <div class="pv-spinner"></div>
+        <div class="pv-booting-title">Starting the site…</div>
+        <div class="pv-booting-sub">First run compiles hakumaguro.dev — a few seconds. After that it stays warm.</div>
+        ${renderPreviewLog()}
+      </div>`;
+  }
+
+  return `
+    <div class="pv-stage-wrap">
+      <div class="pv-stage" id="pv-stage" style="width:${p.width}px;">
+        <iframe id="pv-frame" src="${esc(p.url)}" title="Live preview of hakumaguro.dev"></iframe>
+        <div class="pv-grip" id="pv-grip" title="Drag to resize the viewport"></div>
+      </div>
+    </div>
+    ${p.canFocus ? "" : `<div class="pv-note">Jump-to-change is off: this layout has no &lt;body&gt; tag the preview could hook into.</div>`}`;
+}
+
+function renderPreviewLog() {
+  const p = state.preview;
+  const lines = p.log.slice(-200).join("\n");
+  return `
+    <div class="pv-log">
+      <button class="pv-log-toggle" id="pv-log-toggle">${p.logOpen ? "Hide" : "Show"} log</button>
+      <pre class="pv-log-body mono" id="pv-log-body" ${p.logOpen ? "" : 'style="display:none;"'}>${esc(lines || "(no output yet)")}</pre>
+    </div>`;
+}
+
+/** What the current preview was built from. Rebuilding is only worth it when
+ *  this changes — re-rendering the screen for an unrelated reason must not
+ *  restart a dev server. */
+function queueSignature() {
+  return state.queueList.map((i) => `${i.op}:${i.path}:${i.transform}`).join("|");
+}
+
+function schedulePreview({ force = false } = {}) {
+  const p = state.preview;
+  if (p.tab !== "preview") return;
+  if (!state.queueList.length) return;
+  if (!force && p.signature === queueSignature() && p.status === "running") return;
+
+  clearTimeout(previewDebounce);
+  previewDebounce = setTimeout(() => runPreview(), 400);
+}
+
+async function runPreview() {
+  const p = state.preview;
+  p.status = "starting";
+  p.error = null;
+  updatePreviewPane();
+
+  const signature = queueSignature();
+  try {
+    const res = await window.catalog.previewRender();
+    p.status = res.status === "running" ? "running" : res.status;
+    p.url = res.url;
+    p.log = res.log || [];
+    p.targets = res.targets || [];
+    p.canFocus = res.canFocus !== false;
+    p.index = 0;
+    p.signature = signature;
+    p.error = res.error || null;
+  } catch (err) {
+    p.status = "failed";
+    p.error = String((err && err.message) || err).replace(/^Error: /, "");
+    const s = await window.catalog.previewState().catch(() => null);
+    if (s && s.log) p.log = s.log;
+  }
+  updatePreviewPane();
+}
+
+/** Repaints just the preview pane + toolbar. Deliberately not render() — a full
+ *  re-render recreates the <iframe>, which reloads the dev server page and
+ *  throws away where the user was looking. */
+function updatePreviewPane() {
+  const pane = dom.app.querySelector("#pane-preview");
+  if (!pane) return;
+  const hadFrame = !!pane.querySelector("#pv-frame");
+  pane.innerHTML = renderPreviewPane();
+  const bar = dom.app.querySelector(".pv-toolbar");
+  if (bar) bar.outerHTML = renderPreviewToolbar();
+  bindPreviewEvents();
+  if (!hadFrame) focusTarget(0, { announce: false });
+}
+
+function postToFrame(msg) {
+  const frame = dom.app.querySelector("#pv-frame");
+  if (frame && frame.contentWindow) frame.contentWindow.postMessage(msg, "*");
+}
+
+function focusTarget(index, { announce = true } = {}) {
+  const p = state.preview;
+  if (!p.targets.length || !p.canFocus) return;
+  p.index = (index + p.targets.length) % p.targets.length;
+  const t = p.targets[p.index];
+  postToFrame({
+    type: "catalog:focus",
+    file: t.file,
+    highlight: p.highlight && t.highlight,
+    top: !t.file,
+  });
+  if (announce) {
+    const counter = dom.app.querySelector("#pv-counter");
+    if (counter) counter.textContent = `${p.index + 1}/${p.targets.length}`;
+  }
 }
 
 function renderApplyResult(result) {
@@ -867,6 +1065,18 @@ function renderSettings() {
           Output format is fixed: webp q82 for everything except logo-mark, which
           is PNG (its path is hardcoded with a .png extension). No slider — this
           matches SPEC.md §4.4.
+        </div>
+        <div class="settings-card">
+          <label class="field-label">Preview cache</label>
+          <div style="font-size:12px;color:#7a7385;line-height:1.6;margin-bottom:10px;">
+            The live preview keeps a shadow copy of the repo (plus its Next.js
+            build cache) outside both repos, so a second preview starts warm.
+            Clearing it frees the disk; the next preview rebuilds it.
+          </div>
+          <div class="settings-path-value" style="margin-bottom:0;">
+            <span id="pv-cache-size">…</span>
+            <button class="btn btn-ghost" id="clear-preview-cache" style="padding:4px 10px;font-size:11px;">Clear</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1162,6 +1372,10 @@ function bindReviewEvents() {
     const result = await window.catalog.queueApply();
     state.applyResult = result;
     state.busy = false;
+    // The queue that the preview was built from is gone; anything still on
+    // screen describes a state that no longer exists.
+    state.preview.signature = null;
+    state.preview.targets = [];
     invalidateThumbCache(); // files at these paths just changed on disk
     await refreshScan();
     await refreshQueue();
@@ -1174,6 +1388,97 @@ function bindReviewEvents() {
       if (target) target.innerHTML = `<div class="label" style="margin-bottom:10px;">Content file changes</div>${renderDiffFiles(files)}`;
     });
   }
+
+  dom.app.querySelectorAll("[data-tab]").forEach((el) => {
+    el.onclick = () => {
+      state.preview.tab = el.dataset.tab;
+      render();
+      schedulePreview();
+    };
+  });
+
+  bindPreviewEvents();
+  schedulePreview();
+}
+
+function bindPreviewEvents() {
+  const p = state.preview;
+
+  dom.app.querySelectorAll("[data-width]").forEach((el) => {
+    el.onclick = () => setPreviewWidth(Number(el.dataset.width));
+  });
+
+  const prev = dom.app.querySelector("#pv-prev");
+  if (prev) prev.onclick = () => focusTarget(p.index - 1);
+  const next = dom.app.querySelector("#pv-next");
+  if (next) next.onclick = () => focusTarget(p.index + 1);
+
+  const hl = dom.app.querySelector("#pv-highlight");
+  if (hl) hl.onchange = () => {
+    p.highlight = hl.checked;
+    if (p.highlight) focusTarget(p.index, { announce: false });
+    else postToFrame({ type: "catalog:clear" });
+  };
+
+  const refresh = dom.app.querySelector("#pv-refresh");
+  if (refresh) refresh.onclick = () => runPreview();
+
+  const logToggle = dom.app.querySelector("#pv-log-toggle");
+  if (logToggle) logToggle.onclick = () => {
+    p.logOpen = !p.logOpen;
+    const body = dom.app.querySelector("#pv-log-body");
+    if (body) body.style.display = p.logOpen ? "" : "none";
+    logToggle.textContent = p.logOpen ? "Hide log" : "Show log";
+  };
+
+  const frame = dom.app.querySelector("#pv-frame");
+  if (frame) frame.onload = () => focusTarget(p.index, { announce: false });
+
+  bindPreviewGrip();
+}
+
+function setPreviewWidth(w) {
+  state.preview.width = w;
+  const stage = dom.app.querySelector("#pv-stage");
+  if (stage) stage.style.width = w + "px";
+  const readout = dom.app.querySelector("#pv-width-readout");
+  if (readout) readout.textContent = w + "px";
+  dom.app.querySelectorAll("[data-width]").forEach((el) => {
+    el.classList.toggle("is-active", Number(el.dataset.width) === w);
+  });
+}
+
+/** Free-width drag. The presets cover the usual three, but the break you're
+ *  actually hunting is at some arbitrary width — only dragging finds that. */
+function bindPreviewGrip() {
+  const grip = dom.app.querySelector("#pv-grip");
+  const stage = dom.app.querySelector("#pv-stage");
+  if (!grip || !stage) return;
+
+  grip.onpointerdown = (down) => {
+    down.preventDefault();
+    grip.setPointerCapture(down.pointerId);
+    const startX = down.clientX;
+    const startW = stage.getBoundingClientRect().width;
+
+    const onMove = (move) => {
+      // The stage is centred, so it widens from both edges at once.
+      const w = Math.round(Math.max(320, Math.min(2200, startW + (move.clientX - startX) * 2)));
+      state.preview.width = w;
+      stage.style.width = w + "px";
+      const readout = dom.app.querySelector("#pv-width-readout");
+      if (readout) readout.textContent = w + "px";
+      dom.app.querySelectorAll("[data-width]").forEach((el) => {
+        el.classList.toggle("is-active", Number(el.dataset.width) === w);
+      });
+    };
+    const onUp = () => {
+      grip.removeEventListener("pointermove", onMove);
+      grip.removeEventListener("pointerup", onUp);
+    };
+    grip.addEventListener("pointermove", onMove);
+    grip.addEventListener("pointerup", onUp);
+  };
 }
 
 function bindSettingsEvents() {
@@ -1185,6 +1490,25 @@ function bindSettingsEvents() {
     // adopts it) — just explain, in place, why nothing changed.
     if (!s.ok) { state.setupRejected = s; render(); return; }
     await adoptRepo(s);
+  };
+
+  const sizeEl = dom.app.querySelector("#pv-cache-size");
+  const showSize = async () => {
+    const r = await window.catalog.previewCacheSize().catch(() => ({ bytes: 0 }));
+    if (sizeEl) sizeEl.textContent = r.bytes ? fmtBytes(r.bytes) + " on disk" : "Nothing cached yet";
+  };
+  if (sizeEl) showSize();
+
+  const clearBtn = dom.app.querySelector("#clear-preview-cache");
+  if (clearBtn) clearBtn.onclick = async () => {
+    clearBtn.disabled = true;
+    await window.catalog.previewClearCache().catch(() => null);
+    // The shadow it was serving from is gone, so the running server is stale.
+    state.preview.status = "idle";
+    state.preview.url = null;
+    state.preview.signature = null;
+    await showSize();
+    clearBtn.disabled = false;
   };
 }
 

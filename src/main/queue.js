@@ -128,12 +128,36 @@ class Queue {
   }
 
   /**
+   * Jump-to-change targets for the live preview, in queue order. `file` is the
+   * image to scroll to and outline; ops with nothing to point at (a delete, a
+   * reorder) carry `varName` instead so the caller can anchor on that array's
+   * section — there is no element left to outline, and the thing being judged
+   * is how the row closed up, not one image.
+   */
+  previewTargets() {
+    return this.items.map((it) => ({
+      key: it.key,
+      op: it.op,
+      section: it.section || null,
+      file: it.outFilename || null,
+      varName: it.varName || null,
+      highlight: Boolean(it.outFilename),
+    }));
+  }
+
+  /**
    * Writes every queued image first, then replays content-file mutations in
    * queue order (SPEC §8 — not atomic across the two, images land first so a
    * mid-way content-write failure only leaves an orphan, which scan() already
    * detects). Runs the repo's own tsc --noEmit once at the end.
+   *
+   * `verify: false` skips that typecheck and leaves the queue intact — the mode
+   * the live preview uses when replaying the queue into its shadow copy. The
+   * preview is a look, not a gate (a broken preview never blocks Apply), so
+   * paying seconds of tsc on every preview would buy nothing Apply doesn't
+   * already check for real.
    */
-  async apply(repoPath) {
+  async apply(repoPath, { verify = true } = {}) {
     const publicDir = path.join(repoPath, "public");
     const written = [];
 
@@ -166,6 +190,8 @@ class Queue {
         });
       }
     }
+
+    if (!verify) return { written, tsc: null };
 
     const tsc = await verifyTypecheck(repoPath);
     this.clear();

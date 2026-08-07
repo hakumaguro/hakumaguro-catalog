@@ -6,7 +6,8 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "check:preview": "node scripts/check-preview.js"
   },
   "dependencies": {
     "diff": "^5.2.0",

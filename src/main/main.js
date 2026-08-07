@@ -23,6 +23,7 @@ const {
   REPO_MARKERS,
 } = require("./settings");
 const { Queue } = require("./queue");
+const preview = require("./preview");
 
 let mainWindow;
 let currentRepoPath;
@@ -91,7 +92,12 @@ app.whenReady().then(() => {
   });
 });
 
+// The preview's `next dev` is a detached child of a .cmd shim; without this it
+// outlives the app and keeps holding its port.
+app.on("before-quit", () => preview.stopServer());
+
 app.on("window-all-closed", () => {
+  preview.stopServer();
   if (process.platform !== "darwin") app.quit();
 });
 
@@ -265,6 +271,68 @@ ipcMain.handle("queue:diff", () => queue.diff(requireRepo()));
 ipcMain.handle("queue:apply", async () => {
   const result = await queue.apply(requireRepo());
   return result;
+});
+
+// ---- live preview ----
+//
+// preview:render is the whole feature in one handler: level the shadow with the
+// real repo, replay the queue into it, make sure a dev server is up, and hand
+// back the URL plus the list of places worth looking at. The real repo is only
+// ever *read* here — see preview.js for why that invariant is the point.
+
+/** Anchor for ops with no image of their own (delete/reorder): the first
+ *  surviving image in that array, so the view lands on the row that moved. */
+function anchorForArray(shadowDir, varName) {
+  try {
+    const arrays = readArrays(shadowDir);
+    const entries = arrays[varName] || [];
+    for (const e of entries) {
+      if (e && typeof e.image === "string" && e.image) return e.image.split("/").pop();
+    }
+  } catch (_) {
+    // A shadow that won't parse is the preview's problem, not the caller's.
+  }
+  return null;
+}
+
+ipcMain.handle("preview:render", async () => {
+  const repoPath = requireRepo();
+  const userDataDir = app.getPath("userData");
+
+  const { shadowDir, useWebpack, canFocus, turbopackRoot } = preview.syncShadow(userDataDir, repoPath);
+
+  // The same apply() Apply uses, pointed at the shadow — with the typecheck off
+  // and the queue left intact, since nothing here is being committed.
+  await queue.apply(shadowDir, { verify: false });
+
+  const state = await preview.startServer(shadowDir, repoPath, { useWebpack });
+
+  const targets = queue.previewTargets().map((t) => ({
+    ...t,
+    file: t.file || (t.varName ? anchorForArray(shadowDir, t.varName) : null),
+  }));
+
+  return { ...state, targets, canFocus, useWebpack, turbopackRoot, shadowDir };
+});
+
+ipcMain.handle("preview:state", () => preview.serverState());
+
+ipcMain.handle("preview:stop", () => {
+  preview.stopServer();
+  return preview.serverState();
+});
+
+ipcMain.handle("preview:clearCache", () => {
+  const repoPath = requireRepo();
+  const userDataDir = app.getPath("userData");
+  const bytes = preview.shadowSize(userDataDir, repoPath);
+  const result = preview.clearShadow(userDataDir, repoPath);
+  return { cleared: result.ok, error: result.error || null, bytes };
+});
+
+ipcMain.handle("preview:cacheSize", () => {
+  if (!repoStatus.ok) return { bytes: 0 };
+  return { bytes: preview.shadowSize(app.getPath("userData"), currentRepoPath) };
 });
 
 /**
