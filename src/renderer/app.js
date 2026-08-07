@@ -526,7 +526,7 @@ function renderEditor() {
       <div class="stage-dropzone" id="stage-dropzone">
         <div class="stage-dropzone-icon">⇩</div>
         <div class="stage-dropzone-title">Drag & drop an image here</div>
-        <div class="stage-dropzone-hint">or click to browse · PNG, JPG, WEBP</div>
+        <div class="stage-dropzone-hint">or click to browse · PNG, JPG, WEBP, HEIC</div>
       </div>
     `;
   }
@@ -824,7 +824,7 @@ function bindLibraryEvents() {
 
 let dragState = null;
 
-const DROPPABLE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
+const DROPPABLE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"];
 
 function applyPickedSource(picked) {
   const e = state.editor;

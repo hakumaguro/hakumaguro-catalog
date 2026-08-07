@@ -102,9 +102,34 @@ ipcMain.handle("catalog:thumbDataUrl", (_e, { filePath }) => {
 
 // ---- source picking + crop math ----
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+const HEIC_EXTENSIONS = new Set([".heic", ".heif"]);
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ...HEIC_EXTENSIONS]);
 
-async function readImageInfo(sourcePath) {
+function importsDir() {
+  const dir = path.join(app.getPath("temp"), "hakumaguro-catalog-imports");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// sharp/libvips can read a HEIC file's container/metadata but not decode its
+// pixels — prebuilt sharp binaries don't ship the HEVC decoder plugin (the
+// codec iPhones actually use) due to its patent licensing, only the
+// royalty-free AVIF codec within the same HEIF container. heic-convert uses
+// a separate (patent-unencumbered) pure JS/WASM decoder instead. Converts to
+// a real JPEG temp file so the rest of the pipeline — which is entirely
+// sharp/fs path-based — never needs to know the source was ever HEIC.
+async function normalizeSourcePath(sourcePath) {
+  if (!HEIC_EXTENSIONS.has(path.extname(sourcePath).toLowerCase())) return sourcePath;
+  const heicConvert = require("heic-convert");
+  const inputBuffer = fs.readFileSync(sourcePath);
+  const jpegBuffer = await heicConvert({ buffer: inputBuffer, format: "JPEG", quality: 0.92 });
+  const outPath = path.join(importsDir(), `${Date.now()}-${crypto.randomUUID()}.jpg`);
+  fs.writeFileSync(outPath, jpegBuffer);
+  return outPath;
+}
+
+async function readImageInfo(rawSourcePath) {
+  const sourcePath = await normalizeSourcePath(rawSourcePath);
   const meta = await sharp(sourcePath).metadata();
   const bytes = fs.statSync(sourcePath).size;
   return { sourcePath, width: meta.width, height: meta.height, bytes };
@@ -113,7 +138,7 @@ async function readImageInfo(sourcePath) {
 ipcMain.handle("dialog:pickImage", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openFile"],
-    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "heic", "heif"] }],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
   return readImageInfo(result.filePaths[0]);
@@ -140,9 +165,7 @@ ipcMain.handle("dialog:importImageBuffer", async (_e, { name, data }) => {
   if (!IMAGE_EXTENSIONS.has(ext)) {
     throw new Error(`Unsupported file type: ${ext}`);
   }
-  const dir = path.join(app.getPath("temp"), "hakumaguro-catalog-imports");
-  fs.mkdirSync(dir, { recursive: true });
-  const sourcePath = path.join(dir, `${Date.now()}-${crypto.randomUUID()}${ext}`);
+  const sourcePath = path.join(importsDir(), `${Date.now()}-${crypto.randomUUID()}${ext}`);
   fs.writeFileSync(sourcePath, Buffer.from(data));
   return readImageInfo(sourcePath);
 });
