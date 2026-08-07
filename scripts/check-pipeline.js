@@ -1,10 +1,11 @@
 const fs = require("fs");
 const sharp = require("sharp");
+const path = require("path");
 const { processImage, centeredCropRect } = require("../src/main/pipeline");
+const { resolveRepoPathForScripts } = require("../src/main/settings");
 
 async function main() {
-  const source =
-    "C:/Users/sophanat_phokaenkaew/Documents/ClaudeBasket/hakumaguroDev/public/life-3.webp";
+  const source = path.join(resolveRepoPathForScripts(), "public", "life-3.webp");
   const meta = await sharp(source).metadata();
   const target = { w: 712, h: 800 }; // pretend life target, height*2 = 800
 

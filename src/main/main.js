@@ -15,12 +15,47 @@ const { processImage, centeredCropRect } = require("./pipeline");
 const { readArrays } = require("./siteAst");
 const { nextId } = require("./idAlloc");
 const { ARRAY_CONFIGS, FIXED_SLOTS, TARGET_SIZES, artTarget } = require("./slots");
-const { loadSettings, saveSettings, derivedPaths } = require("./settings");
+const {
+  resolveRepoPath,
+  validateRepo,
+  saveSettings,
+  derivedPaths,
+  REPO_MARKERS,
+} = require("./settings");
 const { Queue } = require("./queue");
 
 let mainWindow;
 let currentRepoPath;
+// Result of the last repo resolution/validation — drives whether the renderer
+// shows the picker gate or the normal UI. See settings.js resolveRepoPath().
+let repoStatus = { ok: false, missing: REPO_MARKERS.slice(), reason: "no-path", source: "none" };
 const queue = new Queue();
+
+// Shape sent to the renderer for every settings read/change: derived paths plus
+// the validity verdict, so one payload answers both "where is it" and "can we
+// use it". `sep` lets the renderer join paths without assuming a platform.
+function settingsPayload() {
+  return {
+    ...derivedPaths(currentRepoPath),
+    ok: repoStatus.ok,
+    missing: repoStatus.missing || [],
+    reason: repoStatus.reason || null,
+    source: repoStatus.source || null,
+    markers: REPO_MARKERS,
+    sep: path.sep,
+  };
+}
+
+// Guard for every handler that reads or writes the target repo. The renderer's
+// gate should make this unreachable, but an IPC surface shouldn't depend on the
+// renderer behaving — without it a null repoPath surfaces as a confusing ENOENT
+// deep inside ts-morph or sharp.
+function requireRepo() {
+  if (!repoStatus.ok) {
+    throw new Error("No valid hakumaguro.dev repo is selected — choose one in Settings first.");
+  }
+  return currentRepoPath;
+}
 
 function mimeFor(format) {
   return format === "png" ? "image/png" : "image/webp";
@@ -44,7 +79,11 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  currentRepoPath = loadSettings(app.getPath("userData")).repoPath;
+  repoStatus = resolveRepoPath({
+    userDataDir: app.getPath("userData"),
+    appRoot: path.join(__dirname, "..", ".."),
+  });
+  currentRepoPath = repoStatus.repoPath;
   createWindow();
 
   app.on("activate", () => {
@@ -58,19 +97,44 @@ app.on("window-all-closed", () => {
 
 // ---- settings ----
 
-ipcMain.handle("settings:get", () => derivedPaths(currentRepoPath));
+ipcMain.handle("settings:get", () => settingsPayload());
 
+// Returns null if the user cancelled, otherwise the same payload as
+// settings:get with `ok` telling the caller whether the pick was accepted.
+// A folder that isn't a hakumaguro.dev checkout is REJECTED — neither saved nor
+// made current — so a mis-click can't strand the app pointing at nothing; the
+// rejected path and its `missing` markers still come back so the UI can explain.
 ipcMain.handle("settings:pickRepoFolder", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+    title: "Select the hakumaguro.dev repo folder",
+    defaultPath: currentRepoPath || undefined,
+  });
   if (result.canceled || result.filePaths.length === 0) return null;
-  currentRepoPath = result.filePaths[0];
+
+  const picked = result.filePaths[0];
+  const check = validateRepo(picked);
+  if (!check.ok) {
+    return { ...derivedPaths(picked), ok: false, missing: check.missing, reason: check.reason, source: "rejected", markers: REPO_MARKERS, sep: path.sep };
+  }
+
+  currentRepoPath = picked;
+  repoStatus = { ...check, source: "picked" };
   saveSettings(app.getPath("userData"), { repoPath: currentRepoPath });
-  return derivedPaths(currentRepoPath);
+  return settingsPayload();
+});
+
+// Re-checks the current path on demand — lets the gate offer a "Retry" for the
+// case where the folder is simply not mounted yet (external drive, OneDrive
+// still syncing) rather than genuinely wrong.
+ipcMain.handle("settings:recheck", () => {
+  if (currentRepoPath) repoStatus = { ...validateRepo(currentRepoPath), source: repoStatus.source };
+  return settingsPayload();
 });
 
 // ---- catalog ----
 
-ipcMain.handle("catalog:scan", async () => scan(currentRepoPath));
+ipcMain.handle("catalog:scan", async () => scan(requireRepo()));
 
 ipcMain.handle("catalog:fixedSlots", () => FIXED_SLOTS);
 
@@ -78,7 +142,7 @@ ipcMain.handle("catalog:targetSizes", () => TARGET_SIZES);
 
 ipcMain.handle("catalog:nextId", (_e, { arrayKey }) => {
   const config = ARRAY_CONFIGS[arrayKey];
-  const arrays = readArrays(currentRepoPath);
+  const arrays = readArrays(requireRepo());
   const bySrc = { art: arrays.artPieces, vrClip: arrays.vrClips, life: arrays.lifeSource };
   const ids = (bySrc[arrayKey] || []).map((e) => e.id);
   return nextId(ids, config.idPrefix);
@@ -90,7 +154,7 @@ ipcMain.handle("catalog:nextId", (_e, { arrayKey }) => {
 // (overwriting that same output path) fail with UNKNOWN/EPERM. A data URL
 // hands over the bytes directly with no open handle left behind.
 ipcMain.handle("catalog:thumbDataUrl", (_e, { filePath }) => {
-  const publicDir = path.resolve(path.join(currentRepoPath, "public"));
+  const publicDir = path.resolve(path.join(requireRepo(), "public"));
   const resolved = path.resolve(filePath);
   if (!resolved.startsWith(publicDir + path.sep)) {
     throw new Error("thumbDataUrl: path outside the repo's public dir");
@@ -196,10 +260,10 @@ ipcMain.handle("queue:discardAll", () => {
   return queue.list();
 });
 
-ipcMain.handle("queue:diff", () => queue.diff(currentRepoPath));
+ipcMain.handle("queue:diff", () => queue.diff(requireRepo()));
 
 ipcMain.handle("queue:apply", async () => {
-  const result = await queue.apply(currentRepoPath);
+  const result = await queue.apply(requireRepo());
   return result;
 });
 

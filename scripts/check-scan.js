@@ -1,7 +1,8 @@
 const { scan } = require("../src/main/scan");
+const { resolveRepoPathForScripts } = require("../src/main/settings");
 
 async function main() {
-  const result = await scan("C:/Users/sophanat_phokaenkaew/Documents/ClaudeBasket/hakumaguroDev");
+  const result = await scan(resolveRepoPathForScripts());
   console.log(JSON.stringify(result, null, 2));
 }
 

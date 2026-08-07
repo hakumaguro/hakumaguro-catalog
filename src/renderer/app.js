@@ -46,6 +46,7 @@ const state = {
   applyResult: null, // last apply() outcome, shown on the review screen
   busy: false,
   thumbCache: {}, // absolute path -> data URL, see preloadThumbs()
+  setupRejected: null, // settings payload of a folder the picker just refused
 };
 
 const dom = { app: document.getElementById("app") };
@@ -67,7 +68,8 @@ function esc(s) {
 
 function thumbKeyFor(item) {
   if (!item.file || item.missing) return null;
-  return state.settings.publicDir + "\\" + item.file;
+  // separator comes from the main process (path.sep) rather than being assumed
+  return state.settings.publicDir + (state.settings.sep || "\\") + item.file;
 }
 
 function imgSrc(item) {
@@ -116,11 +118,27 @@ async function refreshScan() {
   await preloadThumbs();
 }
 
-async function loadAll() {
-  state.settings = await window.catalog.getSettings();
+// Everything below the repo gate: only ever called once a valid repo is known,
+// since scan/nextId/diff all reject without one (see requireRepo in main.js).
+async function loadRepoData() {
   state.fixedSlots = await window.catalog.fixedSlots();
   await refreshScan();
   await refreshQueue();
+}
+
+async function loadAll() {
+  state.settings = await window.catalog.getSettings();
+  if (state.settings.ok) await loadRepoData();
+  render();
+}
+
+// Called after the picker accepts a folder, from either the gate or Settings.
+async function adoptRepo(settings) {
+  state.settings = settings;
+  state.setupRejected = null;
+  invalidateThumbCache();
+  await loadRepoData();
+  if (state.screen === "setup") state.screen = "library";
   render();
 }
 
@@ -156,6 +174,16 @@ function hasQueuedChange(varName, id, file) {
 // ---- render dispatch ----
 
 function render() {
+  // The repo gate replaces the whole window — no sidebar, no nav — because
+  // every other screen reads the target repo, and there's nothing meaningful to
+  // show until one is chosen.
+  if (!state.settings || !state.settings.ok) {
+    state.screen = "setup";
+    dom.app.innerHTML = renderSetup();
+    bindSetupEvents();
+    return;
+  }
+
   const d = computeDerived();
   dom.app.innerHTML = `
     <div class="titlebar">
@@ -721,15 +749,112 @@ function renderDiffFiles(files) {
     .join("");
 }
 
+// ---- repo gate (first run / repo moved) ----
+
+// Why we're on this screen, in the user's terms. `reason` comes from
+// settings.js validateRepo(); `source` distinguishes "never configured" from
+// "configured, but the folder stopped resolving".
+function setupExplanation(s) {
+  if (s.source === "env") {
+    return {
+      title: "HAKUMAGURO_REPO doesn't point at the repo",
+      body: "This launch has HAKUMAGURO_REPO set, so that path is used instead of the saved one — but it isn't a usable hakumaguro.dev checkout. Fix the variable and relaunch, or pick a folder now for this session.",
+    };
+  }
+  if (s.source === "stale-settings" || s.reason === "not-a-folder") {
+    return {
+      title: "The repo folder has moved",
+      body: "This app remembers where hakumaguro.dev lives, but that folder isn't there anymore — a different machine, a renamed directory, or a drive that isn't mounted. Point it at the checkout on this machine to continue.",
+    };
+  }
+  if (s.reason === "not-a-repo") {
+    return {
+      title: "That folder isn't a hakumaguro.dev checkout",
+      body: "The folder exists, but it's missing files this app needs to read and write. Pick the repo's root — the folder that directly contains src/ and public/.",
+    };
+  }
+  return {
+    title: "Choose the hakumaguro.dev repo",
+    body: "This app edits images and content inside a checkout of hakumaguro.dev. It couldn't find one on this machine, so pick the folder to work against — it's remembered from now on.",
+  };
+}
+
+// Where the path being shown came from — "last known" would be a lie for a
+// folder the user just picked, or for a per-launch env override.
+function setupPathLabel(s) {
+  if (s.source === "rejected") return "Folder you picked";
+  if (s.source === "env") return "HAKUMAGURO_REPO";
+  return "Last known path";
+}
+
+function renderMarkerList(s) {
+  const markers = s.markers || [];
+  const missing = new Set(s.missing || []);
+  if (markers.length === 0) return "";
+  return markers
+    .map((m) => {
+      const bad = missing.has(m);
+      return `<div class="setup-marker ${bad ? "is-missing" : "is-present"}"><span class="setup-marker-icon">${bad ? "✕" : "✓"}</span><span class="mono">${esc(m)}</span></div>`;
+    })
+    .join("");
+}
+
+function renderSetup() {
+  // A folder the picker just refused takes precedence in the explanation —
+  // it's the thing the user did most recently.
+  const s = state.setupRejected || state.settings || {};
+  const { title, body } = setupExplanation(s);
+  const showChecklist = s.repoPath && s.reason === "not-a-repo";
+
+  return `
+    <div class="setup-screen">
+      <div class="setup-card">
+        <div class="titlebar-dot" style="margin-bottom:18px;"></div>
+        <div class="label screen-kicker">Hakumaguro Catalog · setup</div>
+        <div class="screen-title" style="margin-bottom:12px;">${esc(title)}</div>
+        <p class="setup-body">${esc(body)}</p>
+        ${s.repoPath ? `<div class="setup-path"><span class="label" style="display:block;margin-bottom:4px;">${esc(setupPathLabel(s))}</span><span class="mono">${esc(s.repoPath)}</span></div>` : ""}
+        ${showChecklist ? `<div class="setup-markers"><span class="label" style="display:block;margin-bottom:8px;">What it looked for</span>${renderMarkerList(s)}</div>` : ""}
+        <div class="setup-actions">
+          <button class="btn btn-primary" id="setup-pick">Choose repo folder…</button>
+          ${s.repoPath ? `<button class="btn btn-ghost" id="setup-retry">Check again</button>` : ""}
+        </div>
+        <p class="setup-hint mono">Or set <span class="setup-code">HAKUMAGURO_REPO</span> to the repo path before launching.</p>
+      </div>
+    </div>
+  `;
+}
+
+function bindSetupEvents() {
+  const pick = dom.app.querySelector("#setup-pick");
+  if (pick) pick.onclick = async () => {
+    const s = await window.catalog.pickRepoFolder();
+    if (!s) return; // cancelled
+    if (!s.ok) { state.setupRejected = s; render(); return; }
+    await adoptRepo(s);
+  };
+
+  const retry = dom.app.querySelector("#setup-retry");
+  if (retry) retry.onclick = async () => {
+    const s = await window.catalog.recheckRepo();
+    if (s.ok) { await adoptRepo(s); return; }
+    state.settings = s;
+    state.setupRejected = null;
+    render();
+  };
+}
+
 // ---- settings ----
 
 function renderSettings() {
   const s = state.settings || {};
+  const rejected = state.setupRejected;
   return `
     <div class="settings-scroll">
       <div class="settings-max">
         <div class="label screen-kicker">Settings</div>
         <div class="screen-title" style="margin-bottom:22px;">Repository &amp; output</div>
+        ${rejected ? `<div class="settings-card setup-reject-note"><strong>Not a hakumaguro.dev checkout — repo unchanged.</strong><div class="mono" style="margin:6px 0 10px;">${esc(rejected.repoPath || "")}</div>${renderMarkerList(rejected)}</div>` : ""}
         <div class="settings-card">
           <label class="field-label">Repo path</label>
           <div class="settings-path-value"><span>${esc(s.repoPath || "")}</span><button class="btn btn-ghost" id="pick-repo" style="padding:4px 10px;font-size:11px;">Change…</button></div>
@@ -752,7 +877,7 @@ function renderSettings() {
 
 function bindScreenEvents(d) {
   dom.app.querySelectorAll("[data-nav]").forEach((el) => {
-    el.onclick = () => { state.screen = el.dataset.nav; state.deleteConfirmKey = null; render(); };
+    el.onclick = () => { state.screen = el.dataset.nav; state.deleteConfirmKey = null; state.setupRejected = null; render(); };
   });
   dom.app.querySelectorAll("[data-filter]").forEach((el) => {
     el.onclick = () => { state.screen = "library"; state.filter = el.dataset.filter; render(); };
@@ -1055,7 +1180,11 @@ function bindSettingsEvents() {
   const pickBtn = dom.app.querySelector("#pick-repo");
   if (pickBtn) pickBtn.onclick = async () => {
     const s = await window.catalog.pickRepoFolder();
-    if (s) { state.settings = s; await refreshScan(); await refreshQueue(); render(); }
+    if (!s) return; // cancelled
+    // A rejected folder leaves the current repo untouched (main.js never
+    // adopts it) — just explain, in place, why nothing changed.
+    if (!s.ok) { state.setupRejected = s; render(); return; }
+    await adoptRepo(s);
   };
 }
 

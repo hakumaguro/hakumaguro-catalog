@@ -7,7 +7,9 @@ const {
   verifyTypecheck,
 } = require("../src/main/writer");
 
-const repoPath = "C:/Users/sophanat_phokaenkaew/Documents/ClaudeBasket/hakumaguroDev";
+const { resolveRepoPathForScripts } = require("../src/main/settings");
+
+const repoPath = resolveRepoPathForScripts();
 
 async function main() {
   // 1. append

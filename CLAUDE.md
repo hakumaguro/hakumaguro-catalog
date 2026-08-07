@@ -10,9 +10,26 @@ npm start        # launch the Electron app in dev mode (no packaged installer ex
 npm run smoke     # headless end-to-end regression test (see below)
 ```
 
-There is no separate lint/test framework — `npm run smoke` (`scripts/smoke.js`) is the only automated check. It requires a local checkout of the hakumaguro.dev repo at the path hardcoded in `scripts/smoke.js` (`REPO`) and `src/main/settings.js` (`DEFAULT_REPO_PATH`), with a clean git working tree. It writes a real test entry into that repo's `site.ts`, verifies with the repo's own `tsc --noEmit`, then deletes the entry and asserts `git diff --stat src/lib/site.ts` is empty — so it self-cleans but is not idempotent-safe to run against a dirty tree.
+There is no separate lint/test framework — `npm run smoke` (`scripts/smoke.js`) is the only automated check. It requires a local checkout of the hakumaguro.dev repo (located as described in **Locating the target repo** below). It writes a real test entry into that repo's `site.ts`, verifies with the repo's own `tsc --noEmit`, then deletes the entry and asserts the file is byte-identical to a snapshot taken before the write.
+
+**A dirty target tree is fine.** It reverts via `deleteArrayEntry` (an AST-level undo of its own append), never `git checkout`, so uncommitted work is never discarded; step 3 encodes to an in-memory Buffer and writes no images. Comparing against a snapshot rather than `git diff` is also strictly stronger — with `core.autocrlf` on, a git-level diff can normalize away a line-ending regression that the byte comparison catches.
 
 To run a single piece of it manually, `require` the relevant module (`scan`, `pipeline`, `writer`) from a Node REPL against the same target repo path.
+
+## Locating the target repo
+
+The target repo path is machine-specific, so **nothing hardcodes it** — `src/main/settings.js` owns resolution for both the app and the `scripts/` helpers. A folder only counts as a checkout if all of `REPO_MARKERS` exist in it (`src/lib/site.ts`, `src/app/page.tsx`, `src/ds/LogoMark.tsx`, `public/`); `validateRepo()` returns which markers are missing so the UI can explain a rejection rather than just refusing.
+
+`resolveRepoPath()` (app launch, `main.js`) tries, in order:
+
+1. `HAKUMAGURO_REPO` if set — and if that path is invalid it **stops there** rather than falling through to detection, since silently using a different repo than the one named would be worse. Not persisted; it's a per-launch override.
+2. the saved `settings.json` path, if it still validates
+3. `autoDetectRepo()` — each name in `CANDIDATE_NAMES` under every ancestor of the app folder, up to 3 levels; a hit is persisted so detection only happens once per machine
+4. nothing → `ok: false`, and the renderer shows the repo-picker gate
+
+`resolveRepoPathForScripts()` is the headless equivalent for `scripts/` (no Electron userData to read): env var, else auto-detection, else it throws an actionable message.
+
+**The gate**: when `settings:get` returns `ok: false`, `render()` in the renderer short-circuits to `renderSetup()` — the whole window, no sidebar or nav, since every other screen reads the target repo. Its copy varies by `reason`/`source` (never configured vs. saved-path-moved vs. picked-a-wrong-folder vs. bad env var). `settings:pickRepoFolder` validates before adopting and **rejects** an invalid pick without saving or making it current, so a mis-click can't strand the app; the rejected path comes back with its `missing` markers for display. Repo-touching IPC handlers all go through `requireRepo()`, which throws a readable error rather than letting a null path surface as an ENOENT deep inside ts-morph or sharp.
 
 ## Architecture
 
@@ -28,7 +45,7 @@ This is an Electron tool with **no external target-repo coupling except a filesy
 - `pipeline.js` — `sharp`-based crop + resize + encode (webp/png)
 - `writer.js` — `ts-morph` mutations (append/update/delete/reorder array entries, update fixed-slot JSX) plus **preview variants** (`previewArrayOps`, `previewFixedSlotOps`) that run the same mutation logic against an in-memory `ts-morph` source file without calling `saveSync`, so the Review screen's diff is provably identical to what Apply will actually write. Every real write is followed by running the target repo's own `tsc --noEmit` via `verifyTypecheck`. Saves always do a whole-file `sf.formatText({ indentSize: 2 })` before writing — `ts-morph`'s `removeElement()` re-indents untouched sibling elements as a side effect, and this is required to keep `site.ts` diffs byte-clean.
 - `queue.js` — the pending-change queue (`Queue` class). Image conversion happens **at queue-add time**, not at apply time — Buffers sit in memory until `apply()`. `apply()` writes all queued images first, then replays content-file mutations in queue order; this is intentionally not atomic across the two (a mid-apply failure leaves an orphan image, which `scan()` already detects and reports on next launch).
-- `settings.js` — persists `{ repoPath }` to Electron's userData directory (outside this repo); `publicDir` and `contentFile` are always derived from `repoPath`, never independently configurable, even though earlier mockups showed them as separate fields.
+- `settings.js` — persists `{ repoPath }` to Electron's userData directory (outside this repo) and owns repo location/validation for the whole app (see **Locating the target repo**); `publicDir` and `contentFile` are always derived from `repoPath`, never independently configurable, even though earlier mockups showed them as separate fields.
 
 **IPC boundary**: `main.js` registers `ipcMain.handle` channels; `preload.js` exposes a matching `window.catalog.*` surface via `contextBridge` (context isolation on, node integration off). The renderer (`src/renderer/`, plain HTML/CSS/JS, no framework) only ever talks to the main process through that bridge.
 
