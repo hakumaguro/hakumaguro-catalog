@@ -617,6 +617,7 @@ function renderEditorSidePanel(e) {
 
 function renderReview(d) {
   const items = state.queueList;
+  const justApplied = !!state.applyResult;
   const rows = items
     .map(
       (p) => `
@@ -633,6 +634,16 @@ function renderReview(d) {
     )
     .join("");
 
+  const headerSub = !justApplied
+    ? "Nothing has been written to disk yet."
+    : state.applyResult.tsc.ok
+      ? "Changes were written to disk."
+      : "Files were already written to disk before the typecheck failed — see below.";
+
+  const emptyStateText = justApplied
+    ? "Queue is empty — see the apply result above."
+    : "Nothing queued. Go to Library and open a slot.";
+
   return `
     <div style="flex:1;display:flex;flex-direction:column;min-height:0;">
       <div class="screen-header" style="border-bottom:none;">
@@ -640,15 +651,15 @@ function renderReview(d) {
           <div class="label screen-kicker">Review &amp; apply</div>
           <div style="display:flex;align-items:baseline;gap:12px;">
             <div class="screen-title">${items.length} pending change${items.length === 1 ? "" : "s"}</div>
-            <div style="font-size:12.5px;color:#9a93a3;">Nothing has been written to disk yet.</div>
+            <div style="font-size:12.5px;color:#9a93a3;">${esc(headerSub)}</div>
           </div>
         </div>
       </div>
       <div class="review-scroll" id="diff-scroll">
-        <div class="label" style="margin-bottom:10px;">Files</div>
-        ${items.length ? `<div style="margin-bottom:26px;">${rows}</div>` : `<div class="empty-state">Nothing queued. Go to Library and open a slot.</div>`}
-        <div id="diff-target"></div>
         ${state.applyResult ? renderApplyResult(state.applyResult) : ""}
+        <div class="label" style="margin-bottom:10px;">Files</div>
+        ${items.length ? `<div style="margin-bottom:26px;">${rows}</div>` : `<div class="empty-state">${esc(emptyStateText)}</div>`}
+        <div id="diff-target"></div>
       </div>
       <div class="review-footer">
         <div style="flex:1;">
@@ -665,7 +676,25 @@ function renderReview(d) {
 function renderApplyResult(result) {
   const t = result.tsc;
   const writtenText = result.written.length ? `Written: ${result.written.join(", ")}` : "No image files needed writing.";
-  return `<div class="tsc-result ${t.ok ? "tsc-ok" : "tsc-fail"}">${t.ok ? `tsc --noEmit passed. ${esc(writtenText)}` : esc(t.output)}</div>`;
+  if (t.ok) {
+    return `
+      <div class="apply-banner apply-banner-ok">
+        <div class="apply-banner-icon">✓</div>
+        <div style="min-width:0;">
+          <div class="apply-banner-title">Applied successfully</div>
+          <div class="apply-banner-sub mono">tsc --noEmit passed · ${esc(writtenText)}</div>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="apply-banner apply-banner-fail">
+      <div class="apply-banner-icon">✕</div>
+      <div style="min-width:0;flex:1;">
+        <div class="apply-banner-title">Typecheck failed after writing</div>
+        <div class="apply-banner-sub">Files on disk were already changed — the app doesn't roll back automatically. Fix the error below in the target repo, or revert the files manually.</div>
+        <pre class="apply-banner-output mono">${esc(t.output)}</pre>
+      </div>
+    </div>`;
 }
 
 function renderDiffFiles(files) {
