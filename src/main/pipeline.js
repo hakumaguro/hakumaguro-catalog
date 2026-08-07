@@ -8,6 +8,13 @@ const sharp = require("sharp");
 
 const WEBP_QUALITY = 82;
 
+const COPYRIGHT_EXIF = {
+  IFD0: {
+    Copyright: "© Hakumaguro. All rights reserved.",
+    Artist: "Hakumaguro",
+  },
+};
+
 /**
  * @param {string} sourcePath - absolute path to the original picked file
  * @param {{left:number, top:number, width:number, height:number}} cropRect - in source-pixel coordinates
@@ -28,7 +35,10 @@ async function processImage(sourcePath, cropRect, target, format) {
   if (format === "png") {
     return pipeline.png({ compressionLevel: 9 }).toBuffer();
   }
-  return pipeline.webp({ quality: WEBP_QUALITY }).toBuffer();
+  return pipeline
+    .withMetadata({ exif: COPYRIGHT_EXIF })
+    .webp({ quality: WEBP_QUALITY })
+    .toBuffer();
 }
 
 /** A centered crop rect matching the target aspect ratio — used as the default
