@@ -142,7 +142,7 @@ body {
 .stage-dropzone-icon { font-size: 26px; color: #5fb58f; line-height: 1; }
 .stage-dropzone-title { font-size: 14px; font-weight: 700; color: #4a4550; }
 .stage-dropzone-hint { font-size: 11.5px; color: #9a93a3; }
-.crop-image { position: absolute; left: 50%; top: 50%; will-change: transform; }
+.crop-image { position: absolute; left: 50%; top: 50%; will-change: transform; -webkit-user-drag: none; user-drag: none; }
 .crop-frame { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 0 2000px rgba(52,47,58,.58); border: 2px solid rgba(255,255,255,.95); border-radius: 2px; pointer-events: none; }
 .crop-frame .grid-v, .crop-frame .grid-h { position: absolute; background: rgba(255,255,255,.35); }
 .crop-frame .corner { position: absolute; width: 16px; height: 16px; border-color: #fff; border-style: solid; border-width: 0; }

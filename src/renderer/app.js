@@ -462,7 +462,7 @@ function renderEditor() {
     const scale = baseFit * (e.zoom / 100);
     const dispW = Math.round(e.sourceW * scale), dispH = Math.round(e.sourceH * scale);
     stageInner = `
-      <img id="crop-img" class="crop-image" src="${toFileUrl(e.sourcePath)}"
+      <img id="crop-img" class="crop-image" draggable="false" src="${toFileUrl(e.sourcePath)}"
            style="width:${dispW}px;height:${dispH}px;transform:translate(-50%,-50%) translate(${e.pan.x}px,${e.pan.y}px);">
       <div class="crop-frame" style="width:${frame.w}px;height:${frame.h}px;">
         <div class="grid-v" style="left:33.33%;top:0;bottom:0;width:1px;"></div>
@@ -830,6 +830,7 @@ function bindEditorEvents() {
   bindDropTarget(stage);
   if (stage && e.sourcePath) {
     stage.addEventListener("mousedown", (ev) => {
+      ev.preventDefault(); // stop the browser's native image-drag from hijacking the pan gesture
       dragState = { startX: ev.clientX, startY: ev.clientY, ox: e.pan.x, oy: e.pan.y };
       window.addEventListener("mousemove", onCropDrag);
       window.addEventListener("mouseup", onCropDragEnd);
