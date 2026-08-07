@@ -26,7 +26,7 @@ const LIFE_TAGS = {
   Travel: { fg: "#8a5722", bg: "#fff4e8", bd: "#f0dcc2" },
   Food: { fg: "#8c2f56", bg: "#fbe7ef", bd: "#f2ccdc" },
 };
-const SPANS = ["none", "wide", "tall", "wide-tall"];
+const SPANS = ["none", "tall", "wide-tall"];
 const TILTS = ["left", "none", "right"];
 
 const CROP_MAX_W = 640;
@@ -976,15 +976,23 @@ async function queueEditorChange() {
   render();
 }
 
+// "none" is a UI-only sentinel for "no override" — ArtPiece's span/tilt are
+// optional and only accept their real values ("wide-tall"|"tall" and
+// "left"|"right"); writing the literal string "none" fails tsc. undefined
+// tells the writer to omit the field entirely (writer.js already filters it).
+function orUndefined(v) {
+  return v === "none" ? undefined : v;
+}
+
 function buildFields(e, id, image) {
   if (e.kind === "life") return { id, tag: e.tag, title: e.title, height: e.lifeHeight, mediaLabel: e.mediaLabel, image };
-  if (e.kind === "art") return { id, mediaLabel: e.mediaLabel, span: e.span, tilt: e.tilt, image };
+  if (e.kind === "art") return { id, mediaLabel: e.mediaLabel, span: orUndefined(e.span), tilt: orUndefined(e.tilt), image };
   return { id, mediaLabel: e.mediaLabel, image };
 }
 
 function buildPatch(e) {
   if (e.kind === "life") return { tag: e.tag, title: e.title, height: e.lifeHeight, mediaLabel: e.mediaLabel };
-  if (e.kind === "art") return { mediaLabel: e.mediaLabel, span: e.span, tilt: e.tilt };
+  if (e.kind === "art") return { mediaLabel: e.mediaLabel, span: orUndefined(e.span), tilt: orUndefined(e.tilt) };
   return { mediaLabel: e.mediaLabel };
 }
 
