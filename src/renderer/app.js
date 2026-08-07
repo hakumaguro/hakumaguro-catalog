@@ -516,7 +516,7 @@ function renderEditor() {
       </div>
       <div class="overlay-pill overlay-zoom">
         <span class="label">Zoom</span>
-        <input type="range" min="60" max="240" value="${e.zoom}" id="zoom-slider" style="width:150px;">
+        <input type="range" min="100" max="240" value="${e.zoom}" id="zoom-slider" style="width:150px;">
         <span class="mono" id="zoom-label" style="font-size:11px;width:38px;">${e.zoom}%</span>
         <span id="reset-crop" style="font-size:11px;color:#7a7385;cursor:pointer;border-left:1px solid #e3ddd3;padding-left:11px;">Reset</span>
       </div>
