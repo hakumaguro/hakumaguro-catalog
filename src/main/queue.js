@@ -20,6 +20,29 @@ const {
 const { siteTsPath, pageTsxPath } = require("./siteAst");
 const { diffSummary } = require("./diffText");
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Defense-in-depth against any other transient Windows file lock (e.g. an
+// antivirus scan) — not the fix for the Chromium file:// thumbnail lock
+// itself, which is handled by never opening output paths as file:// src's
+// in the renderer (see catalog:thumbDataUrl in main.js).
+async function renameWithRetry(tmpPath, destPath, attempts = 5, delayMs = 200) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      fs.renameSync(tmpPath, destPath);
+      return;
+    } catch (err) {
+      if (i === attempts) {
+        try { fs.unlinkSync(tmpPath); } catch (_) { /* best effort */ }
+        throw err;
+      }
+      await sleep(delayMs);
+    }
+  }
+}
+
 function fmtBytes(n) {
   if (n == null) return "—";
   return n >= 1024 * 1024 ? (n / (1024 * 1024)).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
@@ -116,7 +139,10 @@ class Queue {
 
     for (const it of this.items) {
       if (it.buffer && it.outFilename) {
-        fs.writeFileSync(path.join(publicDir, it.outFilename), it.buffer);
+        const destPath = path.join(publicDir, it.outFilename);
+        const tmpPath = path.join(publicDir, `.tmp-${crypto.randomUUID()}-${it.outFilename}`);
+        fs.writeFileSync(tmpPath, it.buffer);
+        await renameWithRetry(tmpPath, destPath);
         written.push(it.outFilename);
       }
     }

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("catalog", {
   fixedSlots: () => ipcRenderer.invoke("catalog:fixedSlots"),
   targetSizes: () => ipcRenderer.invoke("catalog:targetSizes"),
   nextId: (arrayKey) => ipcRenderer.invoke("catalog:nextId", { arrayKey }),
+  thumbDataUrl: (filePath) => ipcRenderer.invoke("catalog:thumbDataUrl", { filePath }),
   targetFor: (kind, span, lifeHeight) => ipcRenderer.invoke("catalog:targetFor", { kind, span, lifeHeight }),
   centeredCropRect: (sourceWidth, sourceHeight, target) =>
     ipcRenderer.invoke("catalog:centeredCropRect", { sourceWidth, sourceHeight, target }),

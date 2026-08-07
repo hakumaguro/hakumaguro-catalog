@@ -45,6 +45,7 @@ const state = {
   editor: null,
   applyResult: null, // last apply() outcome, shown on the review screen
   busy: false,
+  thumbCache: {}, // absolute path -> data URL, see preloadThumbs()
 };
 
 const dom = { app: document.getElementById("app") };
@@ -64,9 +65,40 @@ function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function imgSrc(item) {
+function thumbKeyFor(item) {
   if (!item.file || item.missing) return null;
-  return toFileUrl(state.settings.publicDir + "\\" + item.file);
+  return state.settings.publicDir + "\\" + item.file;
+}
+
+function imgSrc(item) {
+  const key = thumbKeyFor(item);
+  return key ? state.thumbCache[key] || null : null;
+}
+
+// Fetches (and caches) a data URL for every currently-known thumbnail so
+// card rendering never uses a raw file:// src — see catalog:thumbDataUrl in
+// main.js for why. Only fetches paths not already in the cache; call
+// invalidateThumbCache() first to force a refetch (e.g. after an apply that
+// overwrote a file at an already-cached path).
+async function preloadThumbs() {
+  const items = [];
+  for (const key of Object.keys(state.scanResult.sections)) {
+    items.push(...state.scanResult.sections[key]);
+  }
+  const toFetch = [...new Set(items.map(thumbKeyFor).filter((k) => k && !(k in state.thumbCache)))];
+  await Promise.all(
+    toFetch.map(async (key) => {
+      try {
+        state.thumbCache[key] = await window.catalog.thumbDataUrl(key);
+      } catch (_) {
+        state.thumbCache[key] = null;
+      }
+    }),
+  );
+}
+
+function invalidateThumbCache() {
+  state.thumbCache = {};
 }
 
 function queueKeyFor(varName, id) {
@@ -81,6 +113,7 @@ async function refreshQueue() {
 
 async function refreshScan() {
   state.scanResult = await window.catalog.scan();
+  await preloadThumbs();
 }
 
 async function loadAll() {
@@ -967,6 +1000,7 @@ function bindReviewEvents() {
     const result = await window.catalog.queueApply();
     state.applyResult = result;
     state.busy = false;
+    invalidateThumbCache(); // files at these paths just changed on disk
     await refreshScan();
     await refreshQueue();
     render();

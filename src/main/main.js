@@ -3,6 +3,12 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const sharp = require("sharp");
+// libvips (sharp's backend) caches recently-read files by default, which on
+// Windows can keep a file handle open well after the read completes — long
+// enough that a later write to that same path (e.g. Apply overwriting an
+// image scan() just read for the Library view) fails with EPERM/UNKNOWN.
+// Global, process-wide setting; must be set before any sharp() call.
+sharp.cache(false);
 
 const { scan } = require("./scan");
 const { processImage, centeredCropRect } = require("./pipeline");
@@ -76,6 +82,22 @@ ipcMain.handle("catalog:nextId", (_e, { arrayKey }) => {
   const bySrc = { art: arrays.artPieces, vrClip: arrays.vrClips, life: arrays.lifeSource };
   const ids = (bySrc[arrayKey] || []).map((e) => e.id);
   return nextId(ids, config.idPrefix);
+});
+
+// Library thumbnails are served as data URLs rather than file:// src's.
+// Windows keeps a lasting lock on any local file Chromium has loaded via
+// file://, for the life of the renderer process — which makes a later Apply
+// (overwriting that same output path) fail with UNKNOWN/EPERM. A data URL
+// hands over the bytes directly with no open handle left behind.
+ipcMain.handle("catalog:thumbDataUrl", (_e, { filePath }) => {
+  const publicDir = path.resolve(path.join(currentRepoPath, "public"));
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(publicDir + path.sep)) {
+    throw new Error("thumbDataUrl: path outside the repo's public dir");
+  }
+  const buf = fs.readFileSync(resolved);
+  const mime = path.extname(resolved).toLowerCase() === ".png" ? "image/png" : "image/webp";
+  return `data:${mime};base64,${buf.toString("base64")}`;
 });
 
 // ---- source picking + crop math ----
