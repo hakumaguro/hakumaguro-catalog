@@ -51,7 +51,12 @@ async function main() {
 
   console.log("\n2. scan()");
   const result = await scan(REPO);
-  assert(result.stats.total === 21, `expected 21 known slots, got ${result.stats.total}`);
+  // Hardcoded on purpose, and expected to need bumping: 4 fixed slots plus
+  // however many entries site.ts currently holds (10 art + 4 vr + 10 life).
+  // Deriving it from readArrays() would just re-implement scan() and assert
+  // nothing. As a fixed number it's a canary — when it trips, the target site
+  // gained or lost content, which is exactly when slots.js is worth a look.
+  assert(result.stats.total === 28, `expected 28 known slots, got ${result.stats.total}`);
   console.log(`   ${result.stats.total} slots, ${result.stats.set} set, ${result.stats.empty} empty, ${result.orphans.length} orphans`);
   const warned = Object.values(result.sections)
     .flat()
