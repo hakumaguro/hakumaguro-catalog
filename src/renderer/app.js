@@ -830,6 +830,7 @@ function bindEditorEvents() {
   bindDropTarget(stage);
   if (stage && e.sourcePath) {
     stage.addEventListener("mousedown", (ev) => {
+      if (ev.target.closest(".overlay-pill")) return; // let the zoom slider / reset link handle their own input
       ev.preventDefault(); // stop the browser's native image-drag from hijacking the pan gesture
       dragState = { startX: ev.clientX, startY: ev.clientY, ox: e.pan.x, oy: e.pan.y };
       window.addEventListener("mousemove", onCropDrag);
