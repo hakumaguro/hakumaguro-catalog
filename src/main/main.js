@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const sharp = require("sharp");
 
 const { scan } = require("./scan");
@@ -97,12 +98,30 @@ ipcMain.handle("dialog:pickImage", async () => {
 });
 
 // Companion to dialog:pickImage for drag-and-dropped files, where the
-// renderer already has an absolute path (via the dropped File's .path) and
+// renderer already has an absolute path (via webUtils.getPathForFile) and
 // just needs the same metadata a picker selection would have produced.
 ipcMain.handle("dialog:imageInfo", async (_e, { sourcePath }) => {
   if (!IMAGE_EXTENSIONS.has(path.extname(sourcePath).toLowerCase())) {
     throw new Error(`Unsupported file type: ${path.extname(sourcePath)}`);
   }
+  return readImageInfo(sourcePath);
+});
+
+// Fallback for drops webUtils.getPathForFile can't resolve a path for — e.g.
+// an image dragged straight out of a browser tab rather than a saved file,
+// which Chromium sometimes hands over as data with no real filesystem
+// backing. The renderer reads the File's raw bytes itself and sends them
+// here; we write them to a real temp file so the rest of the pipeline (which
+// is all path-based, via sharp/fs) doesn't need to know the difference.
+ipcMain.handle("dialog:importImageBuffer", async (_e, { name, data }) => {
+  const ext = path.extname(name).toLowerCase();
+  if (!IMAGE_EXTENSIONS.has(ext)) {
+    throw new Error(`Unsupported file type: ${ext}`);
+  }
+  const dir = path.join(app.getPath("temp"), "hakumaguro-catalog-imports");
+  fs.mkdirSync(dir, { recursive: true });
+  const sourcePath = path.join(dir, `${Date.now()}-${crypto.randomUUID()}${ext}`);
+  fs.writeFileSync(sourcePath, Buffer.from(data));
   return readImageInfo(sourcePath);
 });
 

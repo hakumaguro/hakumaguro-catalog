@@ -790,11 +790,15 @@ async function pickSourceViaDrop(dataTransfer) {
     return;
   }
   const sourcePath = window.catalog.getPathForFile(file);
-  if (!sourcePath) {
-    alert(`Couldn't read a file path for "${file.name}". Try again, or use "click to browse" instead.`);
+  if (sourcePath) {
+    const picked = await window.catalog.imageInfo(sourcePath);
+    applyPickedSource(picked);
     return;
   }
-  const picked = await window.catalog.imageInfo(sourcePath);
+  // No real filesystem path (common for images dragged straight out of a
+  // browser tab) — fall back to sending the raw bytes over instead.
+  const buffer = await file.arrayBuffer();
+  const picked = await window.catalog.importImageBuffer(file.name, buffer);
   applyPickedSource(picked);
 }
 

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("catalog", {
 
   pickImage: () => ipcRenderer.invoke("dialog:pickImage"),
   imageInfo: (sourcePath) => ipcRenderer.invoke("dialog:imageInfo", { sourcePath }),
+  importImageBuffer: (name, data) => ipcRenderer.invoke("dialog:importImageBuffer", { name, data }),
 
   queueList: () => ipcRenderer.invoke("queue:list"),
   queueAdd: (payload) => ipcRenderer.invoke("queue:add", payload),
