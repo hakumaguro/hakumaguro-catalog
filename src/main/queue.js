@@ -75,6 +75,8 @@ class Queue {
       section: it.section,
       path: it.outFilename ? `public/${it.outFilename}` : it.contentDescription,
       transform: it.transform,
+      dimensionLabel: it.dimensionLabel || "",
+      dimensions: it.dimensions ? `${it.dimensions.w} × ${it.dimensions.h}` : "",
       sizes: it.buffer
         ? `${fmtBytes(it.sourceBytes)} → ${fmtBytes(it.buffer.length)}`
         : "",
@@ -125,6 +127,24 @@ class Queue {
       files.push({ file: "src/app/page.tsx", rows, additions, deletions });
     }
     return files;
+  }
+
+  /**
+   * Jump-to-change targets for the live preview, in queue order. `file` is the
+   * image to scroll to and outline; ops with nothing to point at (a delete, a
+   * reorder) carry `varName` instead so the caller can anchor on that array's
+   * section — there is no element left to outline, and the thing being judged
+   * is how the row closed up, not one image.
+   */
+  previewTargets() {
+    return this.items.filter((it) => it.op).map((it) => ({
+      key: it.key,
+      op: it.op,
+      section: it.section || null,
+      file: it.outFilename || null,
+      varName: it.varName || null,
+      highlight: Boolean(it.outFilename),
+    }));
   }
 
   /**

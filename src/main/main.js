@@ -11,7 +11,7 @@ const sharp = require("sharp");
 sharp.cache(false);
 
 const { scan } = require("./scan");
-const { processImage, centeredCropRect } = require("./pipeline");
+const { processImage, encodeFull, centeredCropRect } = require("./pipeline");
 const { readArrays } = require("./siteAst");
 const { nextId } = require("./idAlloc");
 const { ARRAY_CONFIGS, FIXED_SLOTS, TARGET_SIZES, artTarget } = require("./slots");
@@ -239,6 +239,18 @@ ipcMain.handle("queue:add", async (_e, payload) => {
   const sourceBytes = fs.statSync(payload.sourcePath).size;
   const buffer = await processImage(payload.sourcePath, payload.cropRect, payload.target, format);
   const previewDataUrl = `data:${mimeFor(format)};base64,${buffer.toString("base64")}`;
+  const isLightboxArray =
+    (payload.kind === "array-new" || payload.kind === "array-replace") &&
+    (payload.varName === "artPieces" || payload.varName === "lifeSource");
+  const full = isLightboxArray ? await encodeFull(payload.sourcePath, format) : null;
+  const fullFilename = full ? `${payload.id}-full.webp` : null;
+  const fullFields = full
+    ? {
+        imageFull: `/${fullFilename}`,
+        imageFullWidth: full.width,
+        imageFullHeight: full.height,
+      }
+    : null;
 
   if (payload.kind === "array-new") {
     queue.add({
@@ -246,11 +258,13 @@ ipcMain.handle("queue:add", async (_e, payload) => {
       section: payload.section,
       varName: payload.varName,
       id: payload.id,
-      fields: payload.fields,
+      fields: fullFields ? { ...payload.fields, ...fullFields } : payload.fields,
       buffer,
       outFilename: payload.outFilename,
       sourceBytes,
       previewDataUrl,
+      dimensionLabel: "Cropped",
+      dimensions: payload.target,
       transform: `new · ${payload.target.w} × ${payload.target.h}`,
     });
   } else if (payload.kind === "array-replace") {
@@ -259,11 +273,13 @@ ipcMain.handle("queue:add", async (_e, payload) => {
       section: payload.section,
       varName: payload.varName,
       id: payload.id,
-      patch: payload.patch,
+      patch: fullFields ? { ...payload.patch, ...fullFields } : payload.patch,
       buffer,
       outFilename: payload.outFilename,
       sourceBytes,
       previewDataUrl,
+      dimensionLabel: "Cropped",
+      dimensions: payload.target,
       transform: `recrop · ${payload.target.w} × ${payload.target.h}`,
     });
   } else if (payload.kind === "fixed-replace") {
@@ -278,10 +294,23 @@ ipcMain.handle("queue:add", async (_e, payload) => {
       outFilename: payload.file,
       sourceBytes,
       previewDataUrl,
+      dimensionLabel: "Cropped",
+      dimensions: payload.target,
       transform: `recrop · ${payload.target.w} × ${payload.target.h}`,
     });
   } else {
     throw new Error(`queue:add — unknown kind "${payload.kind}"`);
+  }
+
+  if (full) {
+    queue.add({
+      buffer: full.buffer,
+      outFilename: fullFilename,
+      sourceBytes,
+      dimensionLabel: "Uncropped",
+      dimensions: { w: full.width, h: full.height },
+      transform: "full-resolution original (uncropped)",
+    });
   }
 
   return { ok: true, list: queue.list() };

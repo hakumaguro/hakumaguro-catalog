@@ -104,10 +104,13 @@ async function scan(repoPath) {
     entries.forEach((entry, index) => {
       const filename = (entry.image || "").replace(/^\//, "");
       if (filename) knownFilenames.add(filename);
+      const fullFilename = (entry.imageFull || "").replace(/^\//, "");
+      if (fullFilename) knownFilenames.add(fullFilename);
       const target = config.targetFor(entry);
       addItem(config.section, {
         id: entry.id,
         file: filename,
+        fullFile: fullFilename,
         kind: config.kind,
         list: true,
         index,
@@ -118,6 +121,8 @@ async function scan(repoPath) {
         span: entry.span,
         tilt: entry.tilt,
         lifeHeight: entry.height,
+        fullWidth: entry.imageFullWidth,
+        fullHeight: entry.imageFullHeight,
         warnings: null, // filled below once we have file info
         _target: target,
         _format: config.format,
@@ -130,9 +135,14 @@ async function scan(repoPath) {
     for (const item of section) {
       if (!item.list) continue;
       const info = item.file ? await fileInfo(publicDir, item.file) : null;
+      const fullInfo = item.fullFile ? await fileInfo(publicDir, item.fullFile) : null;
       item.width = info && info.width;
       item.height = info && info.height;
       item.bytes = info && info.bytes;
+      item.fullWidth = fullInfo ? fullInfo.width : item.fullWidth;
+      item.fullHeight = fullInfo ? fullInfo.height : item.fullHeight;
+      item.fullBytes = fullInfo && fullInfo.bytes;
+      item.fullMissing = Boolean(item.fullFile && !fullInfo);
       item.warnings = warningsFor(info, item._target, item._format);
       delete item._target;
       delete item._format;

@@ -339,7 +339,12 @@ function renderCard(it, arrayMeta, idx, total) {
 
   const warnBadge = it.warnings ? `<div class="card-warn-badge"><span class="card-warn-dot"></span><span>${esc(it.warnings[0].tag)}</span></div>` : "";
   const tagChip = it.tag ? `<div class="card-tag" style="color:${LIFE_TAGS[it.tag].fg};background:${LIFE_TAGS[it.tag].bg};">${it.tag}</div>` : "";
-  const metaText = it.width ? `${it.width} × ${it.height} · ${fmtBytes(it.bytes)}` : it.missing ? "no file · slot renders blank" : "";
+  const metaText = it.width ? `Cropped · ${it.width} × ${it.height} · ${fmtBytes(it.bytes)}` : it.missing ? "no file · slot renders blank" : "";
+  const fullMetaText = it.fullFile
+    ? it.fullWidth && it.fullHeight
+      ? `Uncropped · ${it.fullWidth} × ${it.fullHeight}${it.fullBytes ? " · " + fmtBytes(it.fullBytes) : ""}`
+      : "Uncropped · file missing"
+    : "";
   const extraText = it.kind === "life" ? [it.title, `h ${it.lifeHeight}`].filter(Boolean).join(" · ")
     : it.kind === "art" ? `span ${it.span || "none"} · tilt ${it.tilt || "none"}` : "";
   const warnText = it.warnings ? `<div class="card-warn-text">${esc(it.warnings[0].text)}</div>` : "";
@@ -378,6 +383,7 @@ function renderCard(it, arrayMeta, idx, total) {
       <div class="card-body">
         <div class="card-file mono">${esc(it.file || it.id + " (no file)")}</div>
         <div class="card-meta mono">${esc(metaText)}</div>
+        ${fullMetaText ? `<div class="card-meta card-full-meta mono">${esc(fullMetaText)}</div>` : ""}
         ${extraText ? `<div class="card-extra mono">${esc(extraText)}</div>` : ""}
         ${warnText}
         ${footer}
@@ -628,7 +634,10 @@ function renderReview(d) {
         <div class="pending-path mono">${esc(p.path)}</div>
         <div class="pending-transform mono">${esc(p.transform)}</div>
       </div>
-      <div class="pending-sizes">${esc(p.sizes)}</div>
+      <div class="pending-sizes">
+        ${p.dimensions ? `<div class="pending-dim">${esc(p.dimensionLabel)} · ${esc(p.dimensions)}</div>` : ""}
+        <div>${esc(p.sizes)}</div>
+      </div>
       <button class="pending-drop" data-drop-queue="${p.key}">×</button>
     </div>`,
     )

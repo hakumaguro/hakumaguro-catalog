@@ -41,6 +41,29 @@ async function processImage(sourcePath, cropRect, target, format) {
     .toBuffer();
 }
 
+/**
+ * Re-encodes the entire source image without cropping or resizing it.
+ *
+ * @param {string} sourcePath - absolute path to the original picked file
+ * @param {"webp"|"png"} format
+ * @returns {Promise<{buffer: Buffer, width: number, height: number}>}
+ */
+async function encodeFull(sourcePath, format) {
+  const pipeline = sharp(sourcePath);
+  const result = format === "png"
+    ? await pipeline.png({ compressionLevel: 9 }).toBuffer({ resolveWithObject: true })
+    : await pipeline
+      .withMetadata({ exif: COPYRIGHT_EXIF })
+      .webp({ quality: WEBP_QUALITY })
+      .toBuffer({ resolveWithObject: true });
+
+  return {
+    buffer: result.data,
+    width: result.info.width,
+    height: result.info.height,
+  };
+}
+
 /** A centered crop rect matching the target aspect ratio — used as the default
  * crop-frame position before the user drags/zooms in the renderer. */
 function centeredCropRect(sourceWidth, sourceHeight, target) {
@@ -63,4 +86,4 @@ function centeredCropRect(sourceWidth, sourceHeight, target) {
   };
 }
 
-module.exports = { processImage, centeredCropRect, WEBP_QUALITY };
+module.exports = { processImage, encodeFull, centeredCropRect, WEBP_QUALITY };
