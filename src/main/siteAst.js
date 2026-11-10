@@ -77,9 +77,8 @@ function objectLiteralToPlain(objLiteral) {
 }
 
 /**
- * Reads `artPieces`, `vrClips`, and `lifeSource` out of site.ts as plain
- * JS arrays of plain objects. `lifeSource` is NOT exported (only the derived
- * `lifeItems` is) — use getVariableDeclaration, not getExportedDeclarations.
+ * Reads `artPieces`, `vrClips`, and `lifeItems` out of site.ts as plain
+ * JS arrays of plain objects. All three are exported array literals.
  */
 function readArrays(repoPath) {
   const project = newProject();
@@ -103,11 +102,11 @@ function readArrays(repoPath) {
   return {
     artPieces: read("artPieces"),
     vrClips: read("vrClips"),
-    lifeSource: read("lifeSource"),
+    lifeItems: read("lifeItems"),
   };
 }
 
-/** Reads the 3 hardcoded <Image> slots in page.tsx: src, alt, and the block prop that echoes alt. */
+/** Reads the hardcoded <Image> slots in page.tsx: src, alt, and the block prop that echoes alt. */
 function readFixedPageSlots(repoPath) {
   const project = newProject();
   const sf = project.addSourceFileAtPath(pageTsxPath(repoPath));
@@ -131,7 +130,7 @@ function readFixedPageSlots(repoPath) {
     }
     // Only literal string srcs are real fixed slots — `withMedia()`'s
     // `<Image src={image} alt={rest.mediaLabel} />` is the gallery-tile
-    // template, not one of the 3 hardcoded slots, and its src/alt are JSX
+    // template, not one of the hardcoded slots, and its src/alt are JSX
     // expressions (identifiers), not string literals.
     if (attrs.src && attrs.src.startsWith("/")) slots.push({ src: attrs.src, alt: attrs.alt });
   }

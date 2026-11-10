@@ -14,7 +14,7 @@ const { scan } = require("./scan");
 const { processImage, encodeFull, centeredCropRect } = require("./pipeline");
 const { readArrays } = require("./siteAst");
 const { nextId } = require("./idAlloc");
-const { ARRAY_CONFIGS, FIXED_SLOTS, TARGET_SIZES, artTarget } = require("./slots");
+const { ARRAY_CONFIGS, FIXED_SLOTS, TARGET_SIZES } = require("./slots");
 const { loadSettings, saveSettings, derivedPaths } = require("./settings");
 const { Queue } = require("./queue");
 
@@ -79,7 +79,7 @@ ipcMain.handle("catalog:targetSizes", () => TARGET_SIZES);
 ipcMain.handle("catalog:nextId", (_e, { arrayKey }) => {
   const config = ARRAY_CONFIGS[arrayKey];
   const arrays = readArrays(currentRepoPath);
-  const bySrc = { art: arrays.artPieces, vrClip: arrays.vrClips, life: arrays.lifeSource };
+  const bySrc = { art: arrays.artPieces, vrClip: arrays.vrClips, life: arrays.lifeItems };
   const ids = (bySrc[arrayKey] || []).map((e) => e.id);
   return nextId(ids, config.idPrefix);
 });
@@ -171,9 +171,11 @@ ipcMain.handle("dialog:importImageBuffer", async (_e, { name, data }) => {
 });
 
 ipcMain.handle("catalog:targetFor", (_e, { kind, span, lifeHeight }) => {
-  if (kind === "art") return artTarget(span);
-  if (kind === "life") return { w: 712, h: (lifeHeight || 260) * 2 };
-  if (kind === "vr-clip") return TARGET_SIZES.vrClip;
+  // Always answered from slots.js, never recomputed here — the crop box the
+  // editor draws must be the same box scan() measures files against.
+  if (kind === "art") return ARRAY_CONFIGS.art.targetFor({ span });
+  if (kind === "life") return ARRAY_CONFIGS.life.targetFor({ height: lifeHeight });
+  if (kind === "vr-clip") return ARRAY_CONFIGS.vrClip.targetFor();
   // plain/fixed slots pass their target explicitly via FIXED_SLOTS lookup instead
   return null;
 });
@@ -241,7 +243,7 @@ ipcMain.handle("queue:add", async (_e, payload) => {
   const previewDataUrl = `data:${mimeFor(format)};base64,${buffer.toString("base64")}`;
   const isLightboxArray =
     (payload.kind === "array-new" || payload.kind === "array-replace") &&
-    (payload.varName === "artPieces" || payload.varName === "lifeSource");
+    (payload.varName === "artPieces" || payload.varName === "lifeItems");
   const full = isLightboxArray ? await encodeFull(payload.sourcePath, format) : null;
   const fullFilename = full ? `${payload.id}-full.webp` : null;
   const fullFields = full

@@ -10,7 +10,7 @@ npm start        # launch the Electron app in dev mode (no packaged installer ex
 npm run smoke     # headless end-to-end regression test (see below)
 ```
 
-There is no separate lint/test framework — `npm run smoke` (`scripts/smoke.js`) is the only automated check. It requires a local checkout of the hakumaguro.dev repo at the path hardcoded in `scripts/smoke.js` (`REPO`) and `src/main/settings.js` (`DEFAULT_REPO_PATH`), with a clean git working tree. It writes a real test entry into that repo's `site.ts`, verifies with the repo's own `tsc --noEmit`, then deletes the entry and asserts `git diff --stat src/lib/site.ts` is empty — so it self-cleans but is not idempotent-safe to run against a dirty tree.
+There is no separate lint/test framework — `npm run smoke` (`scripts/smoke.js`) is the only automated check. It requires a local checkout of the hakumaguro.dev repo at the path in the `HAKUMAGURO_REPO` environment variable (read by `scripts/smoke.js` and the `scripts/check-*.js` helpers), falling back to the path hardcoded in those scripts and in `src/main/settings.js` (`DEFAULT_REPO_PATH`), with a clean git working tree. It writes a real test entry into that repo's `site.ts`, verifies with the repo's own `tsc --noEmit`, then deletes the entry and asserts `git diff --stat src/lib/site.ts` is empty — so it self-cleans but is not idempotent-safe to run against a dirty tree.
 
 To run a single piece of it manually, `require` the relevant module (`scan`, `pipeline`, `writer`) from a Node REPL against the same target repo path.
 
@@ -18,7 +18,7 @@ To run a single piece of it manually, `require` the relevant module (`scan`, `pi
 
 This is an Electron tool with **no external target-repo coupling except a filesystem path** — it reads and writes another project (hakumaguro.dev) on disk, not itself. Understanding it requires knowing the shape of that target repo:
 
-- hakumaguro.dev has **21 known image slots**: 4 "fixed" slots bound into `page.tsx`/`LogoMark.tsx` by hardcoded `<Image src>` paths (never added/removed/reordered, only replaced in place), plus 3 arrays in `src/lib/site.ts` (`artPieces`, `vrClips`, `lifeSource`) whose entries this tool can append/replace/delete/reorder.
+- hakumaguro.dev has **known image slots** (36 at the time of writing): 5 "fixed" slots (hero key visual, about portrait, shinano, contact avatar, logo mark) bound into `page.tsx`/`LogoMark.tsx` by hardcoded `<Image src>` paths (never added/removed/reordered, only replaced in place), plus 3 arrays in `src/lib/site.ts` (`artPieces`, `vrClips`, `lifeItems`, all exported array literals) whose entries this tool can append/replace/delete/reorder. Array order matters on the site: `artPieces` is ordered so spans add up to whole rows of the 4-column grid, and `lifeItems` is ordered to balance the four desktop masonry columns, so reorder with care. `ArtPiece` has only an optional `span` (no `tilt`).
 - The full slot registry — target pixel sizes (`@2x`), which array each belongs to, JSX prop names that must stay in sync with `alt` text — is **hardcoded** in `src/main/slots.js`, not introspected from the target repo's TypeScript types. If hakumaguro.dev's slot shapes change, `slots.js` must be updated by hand.
 
 **Main-process module chain** (`src/main/`), each doing one job in the pipeline:

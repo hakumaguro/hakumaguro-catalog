@@ -20,3 +20,6 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# scratch output of scripts/check-pipeline.js
+scripts/_out-test.*

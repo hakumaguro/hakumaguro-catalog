@@ -2,15 +2,22 @@
 // Deliberately hardcoded, not introspected from site.ts's TS types (SPEC §2 / ticket 02 answer).
 
 const TARGET_SIZES = {
-  artNormal: { w: 378, h: 340 },
-  artTall: { w: 378, h: 708 },
-  artWideTall: { w: 783, h: 708 },
+  // Art grid is 4 columns, cell ~256.5 x 231 CSS px at full width (@2x below).
+  artNormal: { w: 514, h: 462 },
+  artTall: { w: 514, h: 944 },
+  artWideTall: { w: 1046, h: 944 },
   vrClip: { w: 670, h: 376, aspect: 16 / 9 },
-  hero: { w: 600, h: 600, aspect: 1 },
-  shinano: { w: 600, h: 800, aspect: 3 / 4 },
+  heroPicture: { w: 1536, h: 1024, aspect: 3 / 2 },
+  aboutPortrait: { w: 600, h: 600, aspect: 1 },
+  shinano: { w: 800, h: 1067, aspect: 3 / 4 },
   contact: { w: 320, h: 320, aspect: 1 },
-  logoMark: { w: 48, h: 48, aspect: 1 },
+  logoMark: { w: 64, h: 64, aspect: 1 },
 };
+
+// Files in public/ that are deliberately not image slots (so scan() does not
+// report them as orphans). og.jpg is the Open Graph card referenced from
+// src/app/layout.tsx metadata.
+const KNOWN_NON_SLOT_FILES = ["og.jpg"];
 
 function artTarget(span) {
   if (span === "wide-tall") return TARGET_SIZES.artWideTall;
@@ -18,7 +25,7 @@ function artTarget(span) {
   return TARGET_SIZES.artNormal;
 }
 
-// The 4 slots that are NOT array members — replace-only, never deleted, never
+// The 5 slots that are NOT array members — replace-only, never deleted, never
 // reordered, and their filename never changes (so "replace" only ever
 // overwrites the same path — see writer.js). wrapperAttr/labelProp identify
 // the JSX prop pair that must stay in sync with the <Image alt> (ticket 06);
@@ -26,11 +33,21 @@ function artTarget(span) {
 // hardcoded — replacing it is a pure file overwrite, no AST write at all.
 const FIXED_SLOTS = [
   {
-    id: "hero-portrait",
-    file: "haku-hero.webp",
+    id: "hero-picture",
+    file: "haku-sky.webp",
     section: "hero",
     bind: "page.tsx",
-    target: TARGET_SIZES.hero,
+    target: TARGET_SIZES.heroPicture,
+    format: "webp",
+    wrapperAttr: "picture",
+    labelProp: "pictureLabel",
+  },
+  {
+    id: "about-portrait",
+    file: "haku-hero.webp",
+    section: "about",
+    bind: "page.tsx",
+    target: TARGET_SIZES.aboutPortrait,
     format: "webp",
     wrapperAttr: "portrait",
     labelProp: "portraitLabel",
@@ -85,15 +102,17 @@ const ARRAY_CONFIGS = {
   },
   life: {
     section: "ground",
-    variableName: "lifeSource",
+    variableName: "lifeItems",
     idPrefix: "life",
     kind: "life",
     format: "webp",
-    // life has no fixed target width — the box itself varies 323-356px @1x
-    // (see assets/slot-dimensions.md); use the widest (@2x 712) and the
-    // user-set height field for the target box.
-    targetFor: (item) => ({ w: 712, h: (item.height || 260) * 2 }),
+    // life has no fixed target width — the box varies by breakpoint: ~252px
+    // in the 4-column desktop layout, up to ~293px in the 2-column layout just
+    // under 640px (on phones the height is scaled to 62%). Use 560 wide (@2x of
+    // the desktop tile) and the user-set `height` field (desktop tile height in
+    // CSS px) x 2 for the target box.
+    targetFor: (item) => ({ w: 560, h: (item.height || 260) * 2 }),
   },
 };
 
-module.exports = { TARGET_SIZES, FIXED_SLOTS, ARRAY_CONFIGS, artTarget };
+module.exports = { TARGET_SIZES, KNOWN_NON_SLOT_FILES, FIXED_SLOTS, ARRAY_CONFIGS, artTarget };

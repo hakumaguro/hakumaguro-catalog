@@ -1,5 +1,5 @@
 // Catalog scanner — SPEC.md §2/§7. Scans public/ + parses site.ts/page.tsx to
-// build the current state of all 21 known slots, and flags what doesn't match
+// build the current state of all known slots, and flags what doesn't match
 // (orphan files, missing-file bindings, wrong size/aspect/weight).
 
 const fs = require("fs");
@@ -7,7 +7,7 @@ const path = require("path");
 const sharp = require("sharp");
 
 const { readArrays, readFixedPageSlots } = require("./siteAst");
-const { FIXED_SLOTS, ARRAY_CONFIGS } = require("./slots");
+const { FIXED_SLOTS, ARRAY_CONFIGS, KNOWN_NON_SLOT_FILES } = require("./slots");
 
 const BYTES_HEAVY_THRESHOLD = 300 * 1024; // flag anything heavier than this outright
 const OVERSIZE_FACTOR = 2.5; // actual px more than this many times the target = "oversized"
@@ -71,14 +71,14 @@ async function scan(repoPath) {
   const fixedPageSlots = readFixedPageSlots(repoPath);
   const pageSlotBySrc = new Map(fixedPageSlots.map((s) => [s.src, s]));
 
-  const knownFilenames = new Set();
+  const knownFilenames = new Set(KNOWN_NON_SLOT_FILES);
   const sections = {};
   const addItem = (sectionKey, item) => {
     if (!sections[sectionKey]) sections[sectionKey] = [];
     sections[sectionKey].push(item);
   };
 
-  // --- fixed slots (hero/vrc-portrait/contact-avatar/logo-mark) ---
+  // --- fixed slots (hero-picture/about-portrait/vrc-portrait/contact-avatar/logo-mark) ---
   for (const slot of FIXED_SLOTS) {
     knownFilenames.add(slot.file);
     const info = await fileInfo(publicDir, slot.file);
@@ -98,7 +98,7 @@ async function scan(repoPath) {
   }
 
   // --- array-backed slots (art/vr-clip/life) ---
-  const arrayByConfigKey = { art: arrays.artPieces, vrClip: arrays.vrClips, life: arrays.lifeSource };
+  const arrayByConfigKey = { art: arrays.artPieces, vrClip: arrays.vrClips, life: arrays.lifeItems };
   for (const [key, config] of Object.entries(ARRAY_CONFIGS)) {
     const entries = arrayByConfigKey[key] || [];
     entries.forEach((entry, index) => {
@@ -119,7 +119,6 @@ async function scan(repoPath) {
         title: entry.title,
         tag: entry.tag,
         span: entry.span,
-        tilt: entry.tilt,
         lifeHeight: entry.height,
         fullWidth: entry.imageFullWidth,
         fullHeight: entry.imageFullHeight,

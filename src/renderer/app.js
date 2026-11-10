@@ -4,20 +4,21 @@
 // only for display grouping + labels — all actual sizing/id rules live in
 // main process modules and are asked for via IPC, never recomputed here) ----
 
-const SECTION_ORDER = ["hero", "imagination", "virtual", "ground", "home", "brand"];
+const SECTION_ORDER = ["hero", "about", "imagination", "virtual", "ground", "home", "brand"];
 const SECTION_META = {
-  hero: { name: "Hero", accent: "#5fb58f", desc: "the opening band" },
-  imagination: { name: "Imagination", accent: "#c2547e", desc: "AI art bento grid" },
-  virtual: { name: "Virtual", accent: "#7261b8", desc: "VRChat portrait & clips" },
-  ground: { name: "Ground", accent: "#c07a3a", desc: "life gallery · masonry" },
-  home: { name: "Home", accent: "#5fb58f", desc: "contact band" },
-  brand: { name: "Brand", accent: "#c2547e", desc: "nav logo mark" },
+  hero: { name: "Hero", accent: "#5b9fe0", desc: "the opening band · key visual" },
+  about: { name: "About", accent: "#5b9fe0", desc: "line-art portrait" },
+  imagination: { name: "Imagination", accent: "#e686a6", desc: "AI art bento grid" },
+  virtual: { name: "Virtual", accent: "#9b8cd8", desc: "VRChat portrait & clips" },
+  ground: { name: "Ground", accent: "#e0a050", desc: "life gallery · masonry" },
+  home: { name: "Home", accent: "#e686a6", desc: "contact band" },
+  brand: { name: "Brand", accent: "#5fb58f", desc: "nav logo mark" },
 };
 
 const ARRAY_META = {
   art: { varName: "artPieces", arrayKey: "art", kind: "art", section: "imagination" },
   "vr-clip": { varName: "vrClips", arrayKey: "vrClip", kind: "vr-clip", section: "virtual" },
-  life: { varName: "lifeSource", arrayKey: "life", kind: "life", section: "ground" },
+  life: { varName: "lifeItems", arrayKey: "life", kind: "life", section: "ground" },
 };
 
 const LIFE_TAGS = {
@@ -27,7 +28,6 @@ const LIFE_TAGS = {
   Food: { fg: "#8c2f56", bg: "#fbe7ef", bd: "#f2ccdc" },
 };
 const SPANS = ["none", "tall", "wide-tall"];
-const TILTS = ["left", "none", "right"];
 
 const CROP_MAX_W = 640;
 const CROP_MAX_H = 480;
@@ -327,7 +327,7 @@ function renderCard(it, arrayMeta, idx, total) {
   const varName = arrayMeta ? arrayMeta.varName : null;
   const queuedDelete = isQueuedForDelete(varName, it.id);
   const src = imgSrc(it);
-  const isCircle = ["hero-portrait", "contact-avatar", "logo-mark"].includes(it.id);
+  const isCircle = ["about-portrait", "contact-avatar", "logo-mark"].includes(it.id);
   const radius = isCircle ? "50%" : "10px";
   const confirmKey = queueKeyFor(varName, it.id);
   const showConfirm = state.deleteConfirmKey === confirmKey;
@@ -346,7 +346,7 @@ function renderCard(it, arrayMeta, idx, total) {
       : "Uncropped · file missing"
     : "";
   const extraText = it.kind === "life" ? [it.title, `h ${it.lifeHeight}`].filter(Boolean).join(" · ")
-    : it.kind === "art" ? `span ${it.span || "none"} · tilt ${it.tilt || "none"}` : "";
+    : it.kind === "art" ? `span ${it.span || "none"}` : "";
   const warnText = it.warnings ? `<div class="card-warn-text">${esc(it.warnings[0].text)}</div>` : "";
 
   let footer = "";
@@ -419,7 +419,7 @@ async function openEditorForExisting(itemId, kind) {
       mode: "array", action: "replace", section, kind,
       varName: arrayMeta.varName, arrayKey: arrayMeta.arrayKey, id: it.id, existingFile: it.file,
       mediaLabel: it.mediaLabel || "", title: it.title || "", tag: it.tag || "Food",
-      lifeHeight: it.lifeHeight || 260, span: it.span || "none", tilt: it.tilt || "none",
+      lifeHeight: it.lifeHeight || 260, span: it.span || "none",
       target: null, format: "webp",
       sourcePath: null, sourceW: 0, sourceH: 0, sourceBytes: 0,
       pan: { x: 0, y: 0 }, zoom: 100,
@@ -436,7 +436,7 @@ async function openEditorForNew(arrayKey) {
   state.editor = {
     mode: "array", action: "new", section: arrayMeta.section, kind: arrayMeta.kind,
     varName: arrayMeta.varName, arrayKey, id,
-    mediaLabel: "", title: "", tag: "Food", lifeHeight: 260, span: "none", tilt: "none",
+    mediaLabel: "", title: "", tag: "Food", lifeHeight: 260, span: "none",
     target: null, format: "webp",
     sourcePath: null, sourceW: 0, sourceH: 0, sourceBytes: 0,
     pan: { x: 0, y: 0 }, zoom: 100,
@@ -604,8 +604,6 @@ function renderEditorSidePanel(e) {
       <div class="label" style="margin-bottom:9px;">Bento layout</div>
       <label class="field-label">Span</label>
       <div class="chip-grid">${SPANS.map((s) => `<div class="chip" data-set-span="${s}" style="color:${e.span === s ? "#1f6b4e" : "#7a7385"};background:${e.span === s ? "#e3efe8" : "#fff"};border-color:${e.span === s ? "#5fb58f" : "#e3ddd3"};">${s}</div>`).join("")}</div>
-      <label class="field-label">Hover tilt</label>
-      <div class="chip-row">${TILTS.map((t) => `<div class="chip" data-set-tilt="${t}" style="color:${e.tilt === t ? "#1f6b4e" : "#7a7385"};background:${e.tilt === t ? "#e3efe8" : "#fff"};border-color:${e.tilt === t ? "#5fb58f" : "#e3ddd3"};">${t}</div>`).join("")}</div>
     `;
   } else if (e.kind === "vr-clip") {
     html += `
@@ -942,9 +940,6 @@ function bindEditorEvents() {
   dom.app.querySelectorAll("[data-set-span]").forEach((el) => {
     el.onclick = async () => { e.span = el.dataset.setSpan; await refreshEditorTarget(); clampPan(e); render(); };
   });
-  dom.app.querySelectorAll("[data-set-tilt]").forEach((el) => {
-    el.onclick = () => { e.tilt = el.dataset.setTilt; render(); };
-  });
 
   const queueBtn = dom.app.querySelector("#queue-btn");
   if (queueBtn) queueBtn.onclick = () => queueEditorChange();
@@ -1014,23 +1009,23 @@ async function queueEditorChange() {
   render();
 }
 
-// "none" is a UI-only sentinel for "no override" — ArtPiece's span/tilt are
-// optional and only accept their real values ("wide-tall"|"tall" and
-// "left"|"right"); writing the literal string "none" fails tsc. undefined
-// tells the writer to omit the field entirely (writer.js already filters it).
+// "none" is a UI-only sentinel for "no override" — ArtPiece's span is
+// optional and only accepts its real values ("wide-tall"|"tall"); writing the
+// literal string "none" fails tsc. undefined tells the writer to omit the
+// field entirely (writer.js already filters it).
 function orUndefined(v) {
   return v === "none" ? undefined : v;
 }
 
 function buildFields(e, id, image) {
   if (e.kind === "life") return { id, tag: e.tag, title: e.title, height: e.lifeHeight, mediaLabel: e.mediaLabel, image };
-  if (e.kind === "art") return { id, mediaLabel: e.mediaLabel, span: orUndefined(e.span), tilt: orUndefined(e.tilt), image };
+  if (e.kind === "art") return { id, mediaLabel: e.mediaLabel, span: orUndefined(e.span), image };
   return { id, mediaLabel: e.mediaLabel, image };
 }
 
 function buildPatch(e) {
   if (e.kind === "life") return { tag: e.tag, title: e.title, height: e.lifeHeight, mediaLabel: e.mediaLabel };
-  if (e.kind === "art") return { mediaLabel: e.mediaLabel, span: orUndefined(e.span), tilt: orUndefined(e.tilt) };
+  if (e.kind === "art") return { mediaLabel: e.mediaLabel, span: orUndefined(e.span) };
   return { mediaLabel: e.mediaLabel };
 }
 

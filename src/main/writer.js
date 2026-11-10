@@ -12,7 +12,7 @@ const { newProject, siteTsPath, pageTsxPath } = require("./siteAst");
 // Applied to the whole file before every save. Needed because ts-morph's
 // structural manipulations (removeElement especially) can leave neighboring,
 // untouched elements re-indented relative to the source — verified: a plain
-// append+delete round-trip on `lifeSource` left `life-8` re-indented by 2
+// append+delete round-trip on `lifeItems` left `life-8` re-indented by 2
 // spaces until this was added. A whole-file LanguageService format pass
 // converges everything back to the project's actual 2-space convention, and
 // round-trips byte-clean once applied consistently.
@@ -120,7 +120,13 @@ function deleteArrayEntry(repoPath, varName, id) {
   sf.saveSync();
 }
 
-/** Reorders an array to match `orderedIds` exactly (ids not listed keep their relative order, appended last). */
+/**
+ * Reorders an array to match `orderedIds` exactly (ids not listed keep their
+ * relative order, appended last). Order is meaningful on the
+ * site for two arrays: `artPieces` must keep its spans adding up to whole rows
+ * of 4 (so the 4-column grid packs without holes), and `lifeItems` is ordered
+ * to balance the four desktop masonry columns. Reorder with that in mind.
+ */
 function reorderArray(repoPath, varName, orderedIds) {
   const project = newProject(siteTsPath(repoPath));
   const sf = project.addSourceFileAtPath(siteTsPath(repoPath));
@@ -155,11 +161,11 @@ function reorderArray(repoPath, varName, orderedIds) {
 }
 
 /**
- * Replaces one of the 4 fixed slots in page.tsx: the <Image src=...> attribute,
- * its `alt`, and the sibling `portraitLabel`/`avatarLabel` prop on the parent
+ * Replaces one of the fixed slots in page.tsx: the <Image src=...> attribute,
+ * its `alt`, and the sibling `pictureLabel`/`portraitLabel`/`avatarLabel` prop on the parent
  * block component (kept in sync — see ticket 06). `wrapperAttr` is the JSX
- * attribute name holding the <Image> ("portrait" | "avatar"); `labelProp` is
- * the sibling attribute name that echoes the label ("portraitLabel" | "avatarLabel").
+ * attribute name holding the <Image> ("picture" | "portrait" | "avatar"); `labelProp` is
+ * the sibling attribute name that echoes the label ("pictureLabel" | "portraitLabel" | "avatarLabel").
  */
 function updateFixedPageSlot(repoPath, { oldSrc, newSrc, newAlt, wrapperAttr, labelProp }) {
   const project = newProject(pageTsxPath(repoPath));

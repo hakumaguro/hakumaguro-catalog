@@ -16,7 +16,7 @@ const {
 } = require("../src/main/writer");
 const sharp = require("sharp");
 
-const REPO = "C:/Users/sophanat_phokaenkaew/Documents/ClaudeBasket/hakumaguroDev";
+const REPO = process.env.HAKUMAGURO_REPO || "C:/Users/sophanat_phokaenkaew/Documents/ClaudeBasket/hakumaguroDev";
 
 function git(args) {
   return execFileSync("git", args, { cwd: REPO, encoding: "utf8" });
@@ -33,12 +33,12 @@ async function main() {
 
   console.log("\n2. scan()");
   const result = await scan(REPO);
-  // Hardcoded on purpose, and expected to need bumping: 4 fixed slots plus
-  // however many entries site.ts currently holds (10 art + 8 vr + 12 life).
+  // Hardcoded on purpose, and expected to need bumping: 5 fixed slots plus
+  // however many entries site.ts currently holds (10 art + 9 vr + 12 life).
   // Deriving it from readArrays() would just re-implement scan() and assert
   // nothing. As a fixed number it's a canary — when it trips, the target site
   // gained or lost content, which is exactly when slots.js is worth a look.
-  assert(result.stats.total === 34, `expected 34 known slots, got ${result.stats.total}`);
+  assert(result.stats.total === 36, `expected 36 known slots, got ${result.stats.total}`);
   console.log(`   ${result.stats.total} slots, ${result.stats.set} set, ${result.stats.empty} empty, ${result.orphans.length} orphans`);
   const warned = Object.values(result.sections)
     .flat()
@@ -56,7 +56,7 @@ async function main() {
   console.log(`   ${outMeta.width}x${outMeta.height} webp, ${buf.length} bytes`);
 
   console.log("\n4. writer: append a test life entry, verify, then delete it");
-  appendArrayEntry(REPO, "lifeSource", {
+  appendArrayEntry(REPO, "lifeItems", {
     id: "life-smoke-test",
     tag: "Food",
     title: "smoke test entry",
@@ -68,7 +68,7 @@ async function main() {
   assert(tsc.ok, "tsc --noEmit failed after append:\n" + tsc.output);
   console.log("   tsc --noEmit: ok");
 
-  deleteArrayEntry(REPO, "lifeSource", "life-smoke-test");
+  deleteArrayEntry(REPO, "lifeItems", "life-smoke-test");
   const tscAfterDelete = await verifyTypecheck(REPO);
   assert(tscAfterDelete.ok, "tsc --noEmit failed after delete:\n" + tscAfterDelete.output);
 
@@ -84,7 +84,7 @@ main().catch((e) => {
   console.error(e.message);
   // best-effort cleanup: never leave the smoke-test entry behind
   try {
-    deleteArrayEntry(REPO, "lifeSource", "life-smoke-test");
+    deleteArrayEntry(REPO, "lifeItems", "life-smoke-test");
   } catch (_) {
     /* wasn't there, fine */
   }

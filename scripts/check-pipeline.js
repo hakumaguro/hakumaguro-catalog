@@ -3,8 +3,8 @@ const sharp = require("sharp");
 const { processImage, centeredCropRect } = require("../src/main/pipeline");
 
 async function main() {
-  const source =
-    "C:/Users/sophanat_phokaenkaew/Documents/ClaudeBasket/hakumaguroDev/public/life-3.webp";
+  const repo = process.env.HAKUMAGURO_REPO || "C:/Users/sophanat_phokaenkaew/Documents/ClaudeBasket/hakumaguroDev";
+  const source = repo + "/public/life-3.webp";
   const meta = await sharp(source).metadata();
   const target = { w: 712, h: 800 }; // pretend life target, height*2 = 800
 
