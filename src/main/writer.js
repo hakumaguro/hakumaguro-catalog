@@ -28,6 +28,39 @@ function fieldText(value) {
 }
 
 /**
+ * A JSX attribute initializer for a string value. JSX string attributes have
+ * no escape sequences — `alt="say \"hi\""` is a syntax error, and `&amp;`
+ * would be decoded as an entity — so a value containing a double quote, an
+ * ampersand or a line break is written as an expression (`alt={"…"}`) instead.
+ * siteAst.readFixedPageSlots reads both forms back to the same string.
+ */
+function jsxAttrText(value) {
+  const s = String(value);
+  return /["&\n\r]/.test(s) ? `{${JSON.stringify(s)}}` : `"${s}"`;
+}
+
+/**
+ * Applies a field patch to one array entry. A value of `null` or `undefined`
+ * means "this entry should not have that field": an existing property is
+ * removed, a missing one is left missing. That is how a Replace clears an art
+ * piece's `span` back to a normal tile.
+ */
+function applyPatch(el, patch) {
+  for (const [key, value] of Object.entries(patch)) {
+    const existing = el.getProperty(key);
+    if (value === undefined || value === null) {
+      if (existing) existing.remove();
+      continue;
+    }
+    if (existing) {
+      existing.setInitializer(fieldText(value));
+    } else {
+      el.addPropertyAssignment({ name: key, initializer: fieldText(value) });
+    }
+  }
+}
+
+/**
  * Renders a plain object as a multi-line TS object-literal, in the given key
  * order. No base indent of its own — ts-morph positions the first line to
  * match sibling array elements when inserting, so baking in extra indent here
@@ -35,7 +68,7 @@ function fieldText(value) {
  */
 function formatObjectLiteral(fields, indent = "") {
   const lines = Object.entries(fields)
-    .filter(([, v]) => v !== undefined)
+    .filter(([, v]) => v !== undefined && v !== null)
     .map(([k, v]) => `${indent}  ${k}: ${fieldText(v)},`);
   return `{\n${lines.join("\n")}\n${indent}}`;
 }
@@ -95,15 +128,7 @@ function updateArrayEntry(repoPath, varName, id, patch) {
   const el = findElementById(arrayLiteral, id);
   if (!el) throw new Error(`site.ts: "${varName}" has no entry with id "${id}"`);
 
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) continue;
-    const existing = el.getProperty(key);
-    if (existing) {
-      existing.setInitializer(fieldText(value));
-    } else {
-      el.addPropertyAssignment({ name: key, initializer: fieldText(value) });
-    }
-  }
+  applyPatch(el, patch);
   sf.formatText(FORMAT_SETTINGS);
   sf.saveSync();
 }
@@ -167,10 +192,12 @@ function reorderArray(repoPath, varName, orderedIds) {
  * attribute name holding the <Image> ("picture" | "portrait" | "avatar"); `labelProp` is
  * the sibling attribute name that echoes the label ("pictureLabel" | "portraitLabel" | "avatarLabel").
  */
-function updateFixedPageSlot(repoPath, { oldSrc, newSrc, newAlt, wrapperAttr, labelProp }) {
-  const project = newProject(pageTsxPath(repoPath));
-  const sf = project.addSourceFileAtPath(pageTsxPath(repoPath));
-
+/**
+ * Points one fixed slot's <Image> at `newSrc`, sets its `alt`, and copies the
+ * same text onto the label prop of the block that wraps it. Shared by the real
+ * write and its preview so the Review diff cannot drift from what Apply does.
+ */
+function applyFixedSlotOp(sf, { oldSrc, newSrc, newAlt, wrapperAttr, labelProp }) {
   const images = sf.getDescendantsOfKind(SyntaxKind.JsxSelfClosingElement);
   const target = images.find((img) => {
     if (img.getTagNameNode().getText() !== "Image") return false;
@@ -180,8 +207,8 @@ function updateFixedPageSlot(repoPath, { oldSrc, newSrc, newAlt, wrapperAttr, la
   });
   if (!target) throw new Error(`page.tsx: no <Image src="${oldSrc}"> found`);
 
-  target.getAttributeOrThrow("src").setInitializer(`"${escapeString(newSrc)}"`);
-  target.getAttributeOrThrow("alt").setInitializer(`"${escapeString(newAlt)}"`);
+  target.getAttributeOrThrow("src").setInitializer(jsxAttrText(newSrc));
+  target.getAttributeOrThrow("alt").setInitializer(jsxAttrText(newAlt));
 
   // Walk up to the JsxAttribute named `wrapperAttr` (e.g. portrait={<Image .../>}),
   // then its parent JsxOpeningElement/JsxSelfClosingElement carries the label prop.
@@ -209,7 +236,14 @@ function updateFixedPageSlot(repoPath, { oldSrc, newSrc, newAlt, wrapperAttr, la
   if (!labelAttr) {
     throw new Error(`page.tsx: block element has no "${labelProp}" attribute`);
   }
-  labelAttr.setInitializer(`"${escapeString(newAlt)}"`);
+  labelAttr.setInitializer(jsxAttrText(newAlt));
+}
+
+function updateFixedPageSlot(repoPath, { oldSrc, newSrc, newAlt, wrapperAttr, labelProp }) {
+  const project = newProject(pageTsxPath(repoPath));
+  const sf = project.addSourceFileAtPath(pageTsxPath(repoPath));
+
+  applyFixedSlotOp(sf, { oldSrc, newSrc, newAlt, wrapperAttr, labelProp });
 
   sf.formatText(FORMAT_SETTINGS);
   sf.saveSync();
@@ -262,15 +296,7 @@ function previewArrayOps(repoPath, varName, ops) {
     } else if (op.type === "update") {
       const el = findElementById(arrayLiteral, op.id);
       if (!el) throw new Error(`site.ts: "${varName}" has no entry with id "${op.id}"`);
-      for (const [key, value] of Object.entries(op.patch)) {
-        if (value === undefined) continue;
-        const existing = el.getProperty(key);
-        if (existing) {
-          existing.setInitializer(fieldText(value));
-        } else {
-          el.addPropertyAssignment({ name: key, initializer: fieldText(value) });
-        }
-      }
+      applyPatch(el, op.patch);
     } else if (op.type === "delete") {
       const el = findElementById(arrayLiteral, op.id);
       if (!el) throw new Error(`site.ts: "${varName}" has no entry with id "${op.id}"`);
@@ -313,41 +339,7 @@ function previewFixedSlotOps(repoPath, ops) {
   const sf = project.addSourceFileAtPath(pageTsxPath(repoPath));
   const before = sf.getFullText();
 
-  for (const { oldSrc, newSrc, newAlt, wrapperAttr, labelProp } of ops) {
-    const images = sf.getDescendantsOfKind(SyntaxKind.JsxSelfClosingElement);
-    const target = images.find((img) => {
-      if (img.getTagNameNode().getText() !== "Image") return false;
-      const srcAttr = img.getAttribute("src");
-      const init = srcAttr && srcAttr.getInitializer();
-      return init && init.getKind() === SyntaxKind.StringLiteral && init.getLiteralText() === oldSrc;
-    });
-    if (!target) throw new Error(`page.tsx: no <Image src="${oldSrc}"> found`);
-
-    target.getAttributeOrThrow("src").setInitializer(`"${escapeString(newSrc)}"`);
-    target.getAttributeOrThrow("alt").setInitializer(`"${escapeString(newAlt)}"`);
-
-    const wrapperJsxAttr = target
-      .getAncestors()
-      .find(
-        (a) =>
-          a.getKind() === SyntaxKind.JsxAttribute &&
-          a.getNameNode().getText() === wrapperAttr,
-      );
-    if (!wrapperJsxAttr) {
-      throw new Error(`page.tsx: <Image src="${oldSrc}"> is not inside a "${wrapperAttr}" prop`);
-    }
-    const blockElement =
-      wrapperJsxAttr.getFirstAncestorByKind(SyntaxKind.JsxOpeningElement) ||
-      wrapperJsxAttr.getFirstAncestorByKind(SyntaxKind.JsxSelfClosingElement);
-    if (!blockElement) {
-      throw new Error(`page.tsx: could not find the block element wrapping "${wrapperAttr}"`);
-    }
-    const labelAttr = blockElement.getAttribute(labelProp);
-    if (!labelAttr) {
-      throw new Error(`page.tsx: block element has no "${labelProp}" attribute`);
-    }
-    labelAttr.setInitializer(`"${escapeString(newAlt)}"`);
-  }
+  for (const op of ops) applyFixedSlotOp(sf, op);
 
   sf.formatText(FORMAT_SETTINGS);
   return { before, after: sf.getFullText() };

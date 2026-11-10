@@ -130,8 +130,8 @@ function fixedSlotById(id) {
 
 // order for an array section = disk order, rearranged by any pending REORDER
 // queue item for that varName (SPEC-consistent: reorder is expressed as a
-// full target order, so the latest queued one always wins — see main.js
-// dedup in queue:add).
+// full target order, so the latest queued one always wins — Queue.add in
+// queue.js keeps only the newest reorder per array).
 function effectiveOrder(varName, naturalIds) {
   const pending = state.queueList.find((q) => q.op === "REORDER" && q.varName === varName);
   if (!pending) return naturalIds;
@@ -1011,21 +1011,22 @@ async function queueEditorChange() {
 
 // "none" is a UI-only sentinel for "no override" — ArtPiece's span is
 // optional and only accepts its real values ("wide-tall"|"tall"); writing the
-// literal string "none" fails tsc. undefined tells the writer to omit the
-// field entirely (writer.js already filters it).
-function orUndefined(v) {
-  return v === "none" ? undefined : v;
+// literal string "none" fails tsc. null tells the writer the entry should not
+// have the field: it is left out of a new entry and removed from an existing
+// one. (null rather than undefined so the intent survives being sent over IPC.)
+function orNull(v) {
+  return v === "none" ? null : v;
 }
 
 function buildFields(e, id, image) {
   if (e.kind === "life") return { id, tag: e.tag, title: e.title, height: e.lifeHeight, mediaLabel: e.mediaLabel, image };
-  if (e.kind === "art") return { id, mediaLabel: e.mediaLabel, span: orUndefined(e.span), image };
+  if (e.kind === "art") return { id, mediaLabel: e.mediaLabel, span: orNull(e.span), image };
   return { id, mediaLabel: e.mediaLabel, image };
 }
 
 function buildPatch(e) {
   if (e.kind === "life") return { tag: e.tag, title: e.title, height: e.lifeHeight, mediaLabel: e.mediaLabel };
-  if (e.kind === "art") return { mediaLabel: e.mediaLabel, span: orUndefined(e.span) };
+  if (e.kind === "art") return { mediaLabel: e.mediaLabel, span: orNull(e.span) };
   return { mediaLabel: e.mediaLabel };
 }
 

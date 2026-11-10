@@ -54,6 +54,11 @@ class Queue {
   }
 
   add(item) {
+    // A reorder carries the full target order of its array, so a newer one
+    // makes any earlier one for the same array redundant — keep only the latest.
+    if (item.op === "REORDER") {
+      this.items = this.items.filter((i) => !(i.op === "REORDER" && i.varName === item.varName));
+    }
     const key = crypto.randomUUID();
     this.items.push({ key, ...item });
     return key;
@@ -67,12 +72,20 @@ class Queue {
     this.items = [];
   }
 
-  /** Safe-for-renderer summaries — no Buffers. */
+  /**
+   * Safe-for-renderer summaries — no Buffers. `varName`/`id`/`orderedIds`/`file`
+   * are what the Library uses to mark an item as queued, block a second delete
+   * of the same entry, and build the next move on top of a pending reorder.
+   */
   list() {
     return this.items.map((it) => ({
       key: it.key,
       op: it.op,
       section: it.section,
+      varName: it.varName,
+      id: it.id,
+      orderedIds: it.orderedIds,
+      file: it.file,
       path: it.outFilename ? `public/${it.outFilename}` : it.contentDescription,
       transform: it.transform,
       dimensionLabel: it.dimensionLabel || "",
